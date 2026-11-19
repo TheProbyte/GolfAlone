@@ -55,7 +55,7 @@ internal fun GameView.drawTitle(c: Canvas) {
     bigText(c, course.name, lw / 2, st + 8, if (open) Palette.PAPER_INK else Palette.PAPER_INK_DIM)
     val best = progress.courseBest()
     val info = when {
-        !open -> "LOCKED * FINISH ${Holes.COURSES[ci - 1].name}"
+        !open -> "LOCKED * ${course.holes.size} HOLES * PAR ${course.par}"
         best == 0 -> "${course.holes.size} HOLES * PAR ${course.par}"
         else -> "BEST $best (${parText(best - course.par)}) * PAR ${course.par}"
     }
@@ -65,7 +65,7 @@ internal fun GameView.drawTitle(c: Canvas) {
     for (k in 0 until cn) rect(c, lw / 2 - cn * 3 + k * 6 + 1, st + 26, 3, 2, if (k == ci) Palette.STAMP_RED else Palette.PAPER[1])
     val by = st + 32
     val saved = open && hasSavedRound
-    button(c, B_PLAY, pad, by, lw - pad * 2, PRIMARY_H, if (!open) "LOCKED" else if (saved) "CONTINUE HOLE ${progress.runHole + 1}" else "PLAY COURSE", open)
+    button(c, B_PLAY, pad, by, lw - pad * 2, PRIMARY_H, if (!open) "FINISH ${Holes.COURSES[ci - 1].name}" else if (saved) "CONTINUE HOLE ${progress.runHole + 1}" else "PLAY COURSE", open)
     val ry = by + PRIMARY_H + GAP
     // [NEW] [HOLES] [BOOK] [gear], without NEW when there's no round to start over.
     val gw = 30

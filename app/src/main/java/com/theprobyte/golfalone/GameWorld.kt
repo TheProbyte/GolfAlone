@@ -106,7 +106,7 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
 
     // Buoys, coral, crabs, barrels and cracked planks.
     val crabK = if (crabMoveT < 0f || reduceMotion) 1f else min(1f, crabMoveT / CRAB_STEP_S)
-    Bodies.draw(c, hole, holeState, ix, iy, steppedTime, crabFromX, crabFromY, crabK,
+    Bodies.draw(c, hole, holeState, ix, iy, if (reduceMotion) 0f else steppedTime, crabFromX, crabFromY, crabK,
         mode == Mode.PLAY && !physics.moving && sinkT < 0f, bumpX, bumpY, bumpT)
 
     ambient.draw(c, ix, iy, time, physics.x, physics.y, physics.moving, reduceMotion)

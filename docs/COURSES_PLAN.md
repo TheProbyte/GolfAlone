@@ -3,6 +3,9 @@
 > **Status:** courses 2–5 are **built** (Saltmarsh Flats, Lighthouse Point, Glass Lagoon, Wreck
 > Bay), with course select, per-shot hole state, and their moods, life and sounds. Courses 6–10
 > are still a plan. Pars below are what was built (the bot's best without tricks, plus one).
+> Life as built: herons and frogs (Saltmarsh); fireflies, crickets and a foghorn (Lighthouse);
+> fish in the shallows and lapping water (Lagoon); rain, thunder and crabs (Wreck). The Book's
+> hole table follows the course chosen on the title; separate tabs per course are still to come.
 > **Decision:** no loft shot. Golf Alone stays a rolling, putting game. Every mechanic
 > below works on a ball that rolls (and hops off ramps or vents), never one you chip.
 

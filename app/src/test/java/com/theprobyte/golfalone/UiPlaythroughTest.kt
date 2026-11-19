@@ -248,6 +248,31 @@ class UiPlaythroughTest {
         game.dispatchApplyWindowInsets(pixelInsets())
         game.onImmersive = { hide -> game.dispatchApplyWindowInsets(pixelInsets(if (hide) 0 else 63)) }
         run(600)
+        // A round on a tidal hole: two shots, Save + Quit, Continue. The tide is where it was.
+        while (game.courseForTest.id != "marsh") { press(GameView.B_NEXT_COURSE); runUntil(3000) { !game.fading } }
+        press(GameView.B_PLAY)
+        runUntil(4000) { !game.busy }
+        playHole("c-marsh-round", maxShots = 1)
+        assertFalse("one shot doesn't hole Low Water", game.ballInCup)
+        if (!game.ballInCup) {
+            assertEquals("the tide moved on a step", 1, game.holeStateForTest.shots)
+            val strokes = game.strokesForTest
+            val state = game.holeStateForTest.encode()
+            press(GameView.B_PAUSE)
+            press(GameView.B_QUIT)
+            assertEquals(GameView.Mode.TITLE, game.mode)
+            press(GameView.B_PLAY)
+            assertEquals(strokes, game.strokesForTest)
+            assertEquals("tide, crabs and planks as they were", state, game.holeStateForTest.encode())
+            press(GameView.B_PAUSE)
+            press(GameView.B_QUIT)
+        } else {
+            run(1500)
+            press(GameView.B_NEXT); runUntil(4000) { !game.busy }
+            press(GameView.B_PAUSE); press(GameView.B_QUIT)
+        }
+        assertEquals(GameView.Mode.TITLE, game.mode)
+
         val plays = mapOf("marsh" to listOf(0, 3), "light" to listOf(1, 3), "lagoon" to listOf(1, 3), "wreck" to listOf(1, 2))
         for ((id, holes) in plays) {
             while (game.courseForTest.id != id) { press(GameView.B_NEXT_COURSE); runUntil(3000) { !game.fading } }
@@ -292,6 +317,18 @@ class UiPlaythroughTest {
         assertReachable(GameView.B_PLAY, 56f, 0.6f)
         assertReachable(GameView.B_HOLES, 48f, 0.6f)
         assertReachable(GameView.B_BOOK, 48f, 0.6f)
+
+        // A new player can look at the next course, but it's locked.
+        press(GameView.B_NEXT_COURSE)
+        runUntil(3000) { !game.fading }
+        assertEquals("marsh", game.courseForTest.id)
+        run(300)
+        frame("00-title-locked")
+        press(GameView.B_PLAY)
+        assertEquals(GameView.Mode.TITLE, game.mode)
+        press(GameView.B_PREV_COURSE)
+        runUntil(3000) { !game.fading }
+        assertEquals("cove", game.courseForTest.id)
 
         // The book, before anything's been played.
         press(GameView.B_BOOK)

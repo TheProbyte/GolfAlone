@@ -25,6 +25,7 @@ object Bodies {
     private val CORAL_LIGHT = 0xFFF5B0B8.toInt()
     private val CORAL_DARK = 0xFFA84858.toInt()
     private val LAMP = 0xFFFFE6A0.toInt()
+    private val LOBES = intArrayOf(-2, 0, 1, -1, 0, 2, 2, 1)
     private val shadow get() = Palette.alpha(Palette.INK_SHADOW, 90)
 
     /** Shadows and ground-level bodies, drawn under the ball. */
@@ -106,11 +107,12 @@ object Bodies {
 
     private fun coral(c: Canvas, x: Int, y: Int, seed: Int) {
         Pix.oval(c, x + 1.5f, y + 2.5f, 3.5f, 1.5f, shadow)
-        val lobes = arrayOf(intArrayOf(-2, 0), intArrayOf(1, -1), intArrayOf(0, 2), intArrayOf(2, 1))
-        for ((n, l) in lobes.withIndex()) {
+        for (n in 0 until 4) {
+            val lx = LOBES[2 * n]
+            val ly = LOBES[2 * n + 1]
             val r = if (n == 0) 2 else 1
-            rect(c, x + l[0] - r, y + l[1] - r, 2 * r + 1, 2 * r + 1, if ((n + seed) % 2 == 0) CORAL else CORAL_DARK)
-            px(c, x + l[0], y + l[1] - r, CORAL_LIGHT)
+            rect(c, x + lx - r, y + ly - r, 2 * r + 1, 2 * r + 1, if ((n + seed) % 2 == 0) CORAL else CORAL_DARK)
+            px(c, x + lx, y + ly - r, CORAL_LIGHT)
         }
         px(c, x, y - 2, CORAL_LIGHT); px(c, x - 1, y + 1, CORAL_LIGHT)
     }

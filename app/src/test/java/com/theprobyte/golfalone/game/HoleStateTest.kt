@@ -45,6 +45,48 @@ class HoleStateTest {
         assertTrue("near where it lay", hypot(ph.x - 7.5f * TILE, ph.y - 6.5f * TILE) < 24f)
     }
 
+    /** Wherever a ball lies on tidal sand, when the tide covers it it's moved to dry land. */
+    @Test fun tideReliefAlwaysFindsDryLand() {
+        for (hole in Holes.everyHole.filter { it.tidal }) {
+            val dry = hole.coast
+            val wet = hole.floodedCoast
+            var n = 0
+            for (py in 0 until hole.pxH step 2) for (px in 0 until hole.pxW step 2) {
+                val x = px + 0.5f
+                val y = py + 0.5f
+                if (!dry.isLand(x, y) || wet.isLand(x, y)) continue
+                val st = HoleState(hole)
+                while (st.highAfter == st.high || st.high) st.advance(-99f, -99f) // the next step floods
+                val ph = Physics(hole, st)
+                ph.placeAt(x, y)
+                ph.endShot()
+                assertTrue("${hole.name}: lifted from $x,$y to ${ph.x},${ph.y}, still wet", st.coast.landDepth(ph.x, ph.y) > 0f)
+                n++
+            }
+            assertTrue(n > 0)
+        }
+    }
+
+    @Test fun restingAgainstABodyIsNoReason() {
+        val bump = Hole("BUMP", 3, listOf(
+            "~~~~~~~~~",
+            "~,,,,,,,~",
+            "~,::O::,~",
+            "~,.....,~",
+            "~,..o..,~",
+            "~,.....,~",
+            "~,..T..,~",
+            "~,,,,,,,~",
+            "~~~~~~~~~",
+        ))
+        val ph = Physics(bump)
+        val bx = bump.buoys[0]
+        val by = bump.buoys[1] + Hole.BUOY_R + Physics.BALL_R
+        ph.placeAt(bx, by)
+        assertFalse("not moved", ph.endShot())
+        assertEquals(by, ph.y)
+    }
+
     @Test fun stateSurvivesASave() {
         val crabHole = Hole("CRABS", 2, listOf(
             "~~~~~~~~~~",
@@ -137,6 +179,8 @@ class HoleStateTest {
         ph.settle(object : PhysicsEvents { override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { splashed = true } })
         assertTrue("carried into the sea", splashed)
         assertFalse(ph.moving)
+        assertFalse("not dropped back on the current", rip.at(ph.x, ph.y).flows)
+        assertTrue("dropped ashore", rip.coast.landDepth(ph.x, ph.y) > 0f)
     }
 
     @Test fun aFirmShotCrossesTheRip() {

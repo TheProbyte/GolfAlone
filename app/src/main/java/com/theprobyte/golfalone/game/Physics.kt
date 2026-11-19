@@ -275,9 +275,11 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             val px = lastDryX - ux * k
             val py = lastDryY - uy * k
             val t = hole.at(px, py)
-            if (coast.landDepth(px, py) >= BALL_R + 1f && !t.solid && !t.isRamp && clearOfPosts(px, py)) return px to py
+            if (coast.landDepth(px, py) >= BALL_R + 1f && !t.solid && !t.isRamp && !t.flows && clearOfPosts(px, py)) return px to py
             k += 1f
         }
+        // A current carried it in (no dry ground along its path): back to where the shot was played.
+        if (hole.at(lastDryX, lastDryY).flows) return restX to restY
         return if (coast.isLand(lastDryX, lastDryY)) lastDryX to lastDryY else restX to restY
     }
 
@@ -725,10 +727,12 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         if (inCup) return false
         state.advance(x, y)
         val coast = state.coast
-        if (coast.waterDepth(x, y) <= 0f && clearOfBodies(x, y, 0.2f)) return false
-        // Search outward for dry, clear ground.
+        // Only water moves the ball (resting against a barrel or buoy is fine).
+        if (coast.waterDepth(x, y) <= 0f) return false
+        // Search outward for dry, clear ground, as far as it takes.
         var r = 1f
-        while (r <= 64f) {
+        val far = hypot(hole.pxW.toFloat(), hole.pxH.toFloat())
+        while (r <= far) {
             val steps = (r * 6f).toInt().coerceAtLeast(8)
             var best = -1f
             var bx = 0f
