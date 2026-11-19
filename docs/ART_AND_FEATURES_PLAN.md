@@ -87,6 +87,21 @@
 
 ## 6. QoL (from known rough edges, kept short)
 
+### Q0. Forgiving water (your top annoyance: "barely touching the water edge was boom, a fail")
+
+**Why it happens:** the splash check uses the hidden tile grid, but the coast is drawn smoothed.
+The drawn sand reaches up to **2.5 px** past the physics edge on every hole (`HolePreviewTest`
+measures it). The ball's centre only has to cross that invisible line for an instant splash, and
+then it goes back to where you hit from, so any distance gained is lost as well.
+
+| # | Fix |
+|---|---|
+| Q0a | **What you see is what counts.** The splash uses the same smoothed coastline that's drawn. The mask moves into the pure-Kotlin `game` package, and both Physics and Terrain use it. |
+| Q0b | **The whole ball has to be in.** It splashes only once its centre is a full radius (2.5 px) past the drawn edge. Touching the foam line is still in play. |
+| Q0c | **Teetering.** A slow ball (under about 40 px/s) that reaches the edge wobbles and stops on the lip, with a little "phew" tick. |
+| Q0d | **Penalty drop near where it went in** *(recommended)*: +1 stroke, and the ball is placed on the shore one ball-width back from where it crossed the edge. This is real golf's penalty-area relief. The alternative is to keep today's "back to the last spot". |
+| Q0e | **Wet sand.** A 3 px wet band at the water's edge has heavier friction, so long rolls tend to die on the beach. The planner re-proves every par. |
+
 | # | Item | Why |
 |---|---|---|
 | Q1 | **Quitting while the ball rolls** finishes the shot first, so the ball is saved where it stops. | Today the stroke is kept but the ball goes back to its last lie. |
