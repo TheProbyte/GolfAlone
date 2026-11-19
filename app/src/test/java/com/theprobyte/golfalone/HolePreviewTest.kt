@@ -20,6 +20,9 @@ import java.io.FileOutputStream
 class HolePreviewTest {
     @Test fun renderAllHoles() {
         for (hole in Holes.all) {
+            // What's drawn as land is exactly what physics treats as land.
+            val (land, _, _) = Terrain(hole).masks()
+            org.junit.Assert.assertTrue("${hole.name}: drawn coast = physics coast", land.contentEquals(hole.coast.land))
             val m = Terrain(hole).mismatch()
             println("${hole.name}: drawn vs physics, deepest stray px: land ${m[0]}, water ${m[1]}, sand ${m[2]}, green ${m[3]}")
             // Keep every drawn edge within 3 px of the tiles the physics uses.
@@ -34,7 +37,7 @@ class HolePreviewTest {
             c.scale(scale.toFloat(), scale.toFloat())
             val p = Paint().apply { isFilterBitmap = false }
             c.drawBitmap(t.ground, 0f, 0f, p)
-            c.drawBitmap(t.water[0], 0f, 0f, p)
+            c.drawBitmap(t.water(0), 0f, 0f, p)
             FileOutputStream(File(dir, "hole-${i + 1}.png")).use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
     }

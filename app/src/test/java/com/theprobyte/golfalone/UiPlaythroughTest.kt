@@ -320,13 +320,14 @@ class UiPlaythroughTest {
         run(100)
         assertEquals(0, game.strokesForTest)
 
-        // Into the sea off the tee: penalty stroke and back to the tee.
+        // Into the sea off the tee: a penalty stroke, and the ball is dropped near where it went in.
         drag(Math.PI.toFloat(), 1f)
         run(100)
         waitForRest()
         frame("93-after-splash")
         assertEquals(2, game.strokesForTest)
-        assertEquals(game.hole.teeX, game.ballX, 0.01f)
+        assertTrue("dropped ashore, not on the tee", game.ballX < game.hole.teeX - 8f)
+        assertTrue(game.hole.coast.isLand(game.ballX, game.ballY))
 
         // A drag that starts on the pause chip is a shot, not a pause.
         run(32)

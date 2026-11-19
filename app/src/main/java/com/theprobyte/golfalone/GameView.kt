@@ -154,6 +154,7 @@ class GameView(
     private var popT = -1f
     private var shakeT = -1f
     private var rollDist = 0f
+    private var teeterT = -1f
     private var flyover = false
 
     private var fadeT = -1f
@@ -221,6 +222,9 @@ class GameView(
     // Frame times for the debug readout.
     private val frameMs = FloatArray(120)
     private var frameNext = 0
+    /** How long each frame took to update and draw (ms), separate from the time between frames. */
+    private val drawMs = FloatArray(120)
+    private var drawNext = 0
 
     // ---------------------------------------------------------------- buttons
 
@@ -280,6 +284,8 @@ class GameView(
         hole = course.holes[i]
         physics = Physics(hole)
         terrain = terrains[i].get()
+        for (k in 0 until n) if (k != i && k != i + 1 && terrains[k].isDone) terrains[k].get().releaseWater()
+        if (i + 1 < n) builder.submit { terrains[i + 1].get().prepareWater() }
         slopeTiles = (0 until hole.w * hole.h)
             .filter { val t = hole.tiles[it]; t.slopeX != 0f || t.slopeY != 0f }.toIntArray()
         strokes = 0
@@ -643,7 +649,14 @@ class GameView(
         }
     }
 
-    override fun onSplash(x: Float, y: Float) {
+    override fun onTeeter(x: Float, y: Float) {
+        teeterT = 0f
+        haptics.lipOut(this)
+        sfx.lipOut(pan(x))
+        say("ON THE EDGE!", x, y - 8f, Palette.GOLD)
+    }
+
+    override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) {
         strokes++ // penalty
         sfx.splash(pan(x))
         haptics.splash(this)
@@ -657,7 +670,8 @@ class GameView(
         ring(x, y, 1.0f, 16f, Palette.SPARKLE)
         say("+1 SPLASH", x, y - 8f, Palette.FOAM)
         popT = 0f
-        sfx.pop(pan(physics.x))
+        sfx.pop(pan(dropX))
+        ring(dropX, dropY, 0.5f, 6f, Palette.INK) // where it's dropped
         for (i in 0 until tn) tAt[i] = -9f
     }
 
@@ -765,6 +779,7 @@ class GameView(
         }
         if (mode == Mode.CARD) cardT += dt
         if (popT >= 0f) { popT += dt; if (popT > 0.5f) popT = -1f }
+        if (teeterT >= 0f) { teeterT += dt; if (teeterT > 0.6f) teeterT = -1f }
         if (shakeT >= 0f) { shakeT += dt; if (shakeT > 0.12f) shakeT = -1f }
         if (msg != null) { msgT += dt; if (msgT > 1.4f) msg = null }
 
@@ -826,6 +841,7 @@ class GameView(
     override fun onDraw(canvas: Canvas) {
         val wb = world ?: return
         val ub = ui ?: return
+        val t0 = System.nanoTime()
         val now = SystemClock.uptimeMillis()
         val dtMs = if (lastMs == 0L) 0L else now - lastMs
         val dt = (dtMs / 1000f).coerceIn(0f, 0.1f)
@@ -848,6 +864,8 @@ class GameView(
         src.set(0, 0, ub.width, ub.height)
         dst.set(offX, offY, offX + ub.width * scale, offY + ub.height * scale)
         canvas.drawBitmap(ub, src, dst, blit)
+        drawMs[drawNext] = (System.nanoTime() - t0) / 1e6f
+        drawNext = (drawNext + 1) % drawMs.size
 
         if (isAttachedToWindow && windowVisibility == VISIBLE) postInvalidateOnAnimation()
     }
@@ -860,11 +878,23 @@ class GameView(
 
     private fun drawWorld(ix: Int, iy: Int) {
         val c = wc
-        c.drawColor(Palette.DEEP)
+        val wf = ((time * WATER_FPS).toInt()) % Terrain.FRAMES
+        // The open sea beyond the map: the same water, tiled in world coordinates so it meets
+        // the map's own open water without a seam.
+        val sea = Terrain.sea[wf]
+        var sy = Math.floorDiv(iy, Terrain.SEA_H) * Terrain.SEA_H
+        while (sy < iy + lh + 1) {
+            var sx = Math.floorDiv(ix, Terrain.SEA_W) * Terrain.SEA_W
+            while (sx < ix + lw + 1) {
+                c.drawBitmap(sea, (sx - ix).toFloat(), (sy - iy).toFloat(), blit)
+                sx += Terrain.SEA_W
+            }
+            sy += Terrain.SEA_H
+        }
         val gx = -ix.toFloat()
         val gy = -iy.toFloat()
         c.drawBitmap(terrain.ground, gx, gy, blit)
-        c.drawBitmap(terrain.water[((time * 5f).toInt()) % Terrain.FRAMES], gx, gy, blit)
+        c.drawBitmap(terrain.water(wf), gx, gy, blit)
 
         // Glints drifting downhill on slopes.
         for (i in slopeTiles) {
@@ -983,7 +1013,9 @@ class GameView(
             return
         }
         if (popT in 0f..0.12f) return // blink on respawn
-        val x = bx.roundToInt() - ix
+        // A ball that just stopped on the water's edge wobbles before it settles.
+        val wobble = if (teeterT >= 0f && !reduceMotion) (if ((teeterT * 14f).toInt() % 2 == 0) 1 else -1) * (if (teeterT < 0.4f) 1 else 0) else 0
+        val x = bx.roundToInt() - ix + wobble
         val y = by.roundToInt() - iy
         val dir = if (physics.vx + physics.vy >= 0f) 1 else -1
         Sprites.ball(c, x, y, ((rollDist / 2.5f).toInt() * dir) and 3)
@@ -1476,13 +1508,18 @@ class GameView(
     }
 
     private fun drawFrameTimes(c: Canvas) {
-        val sorted = frameMs.filter { it > 0f }.sorted()
-        if (sorted.isEmpty()) return
-        val p50 = sorted[sorted.size / 2]
-        val p95 = sorted[(sorted.size * 95 / 100).coerceAtMost(sorted.size - 1)]
-        val t = "FRAME ${"%.1f".format(p50)}MS  P95 ${"%.1f".format(p95)}"
-        rect(c, 0, insetTop + 14, PixelFont.width(t) + 6, 9, Palette.alpha(Palette.INK_SHADOW, 200))
-        PixelFont.draw(c, t, 3, insetTop + 16, Palette.GOLD)
+        fun stats(a: FloatArray): Pair<Float, Float>? {
+            val s = a.filter { it > 0f }.sorted()
+            if (s.isEmpty()) return null
+            return s[s.size / 2] to s[(s.size * 95 / 100).coerceAtMost(s.size - 1)]
+        }
+        val f = stats(frameMs) ?: return
+        val d = stats(drawMs) ?: return
+        val l1 = "FRAME ${"%.1f".format(f.first)}MS P95 ${"%.1f".format(f.second)}"
+        val l2 = "DRAW ${"%.1f".format(d.first)}MS P95 ${"%.1f".format(d.second)}"
+        rect(c, 0, insetTop + 14, max(PixelFont.width(l1), PixelFont.width(l2)) + 6, 16, Palette.alpha(Palette.INK_SHADOW, 200))
+        PixelFont.draw(c, l1, 3, insetTop + 16, Palette.GOLD)
+        PixelFont.draw(c, l2, 3, insetTop + 23, Palette.GOLD)
     }
 
     // ---------------------------------------------------------------- tests
@@ -1527,6 +1564,7 @@ class GameView(
         const val HUD_H = 14
         const val GULL_SPEED = 26f
         const val FADE = 0.28f
+        const val WATER_FPS = 6f
         const val LONG_SCROLL = 64
         const val SINK_S = 0.7f
         const val PEEK_HOLD = 0.35f

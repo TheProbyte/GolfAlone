@@ -14,7 +14,10 @@ interface PhysicsEvents {
     /** [wood] is driftwood or a palm trunk rather than stone. */
     fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) {}
     fun onSand(x: Float, y: Float, speed: Float) {}
-    fun onSplash(x: Float, y: Float) {}
+    /** In the water at ([x], [y]); the ball is dropped at ([dropX], [dropY]) near where it went in. */
+    fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) {}
+    /** A slow ball stopped right on the water's edge. */
+    fun onTeeter(x: Float, y: Float) {}
     fun onLipOut(x: Float, y: Float, speed: Float) {}
     fun onCup(x: Float, y: Float, speed: Float) {}
     fun onStop(x: Float, y: Float) {}
@@ -59,6 +62,7 @@ class Physics(val hole: Hole) {
         vx = dx / len * s
         vy = dy / len * s
         restX = x; restY = y
+        lastDryX = x; lastDryY = y; entryVx = vx; entryVy = vy
         moving = true
         lipped = false
         shotTime = 0f
@@ -73,13 +77,26 @@ class Physics(val hole: Hole) {
         val dt = STEP
         shotTime += dt
         val tile = hole.at(x, y)
+        val coast = hole.coast
+        val inWater = coast.waterDepth(x, y)
+        // The beach's wet band and the very edge drag harder, so long rolls tend to die on the sand.
+        val wet = !tile.solid && !tile.isGreen && (inWater > 0f || coast.landDepth(x, y) < WET_BAND)
+        val c = if (wet) max(tile.c, WET_C) else tile.c
+        val k = if (wet) max(tile.k, WET_K) else tile.k
 
         // Rolling resistance (never reverses the ball), then slope.
         var sp = speed
         if (sp > 0f) {
-            val ns = max(0f, sp - (tile.c + tile.k * sp) * dt)
+            val ns = max(0f, sp - (c + k * sp) * dt)
             val f = ns / sp
             vx *= f; vy *= f
+        }
+        // Right on the edge, the bank tips the ball back towards land.
+        if (inWater > 0f) {
+            val gx = coast.waterDepth(x + 1f, y) - coast.waterDepth(x - 1f, y)
+            val gy = coast.waterDepth(x, y + 1f) - coast.waterDepth(x, y - 1f)
+            val gl = hypot(gx, gy)
+            if (gl > 1e-3f) { vx -= gx / gl * LIP_PULL * dt; vy -= gy / gl * LIP_PULL * dt }
         }
         vx += tile.slopeX * SLOPE_G * dt
         vy += tile.slopeY * SLOPE_G * dt
@@ -100,13 +117,25 @@ class Physics(val hole: Hole) {
         collideWalls(ev)
 
         val now = hole.at(x, y)
-        if (now.water) {
-            ev.onSplash(x, y)
-            x = restX; y = restY; vx = 0f; vy = 0f
+        // Water is the drawn sea, and the whole ball has to be in before it counts.
+        val depth = coast.waterDepth(x, y)
+        if (depth >= BALL_R) {
+            val (dx, dy) = dropPoint()
+            ev.onSplash(x, y, dx, dy)
+            x = dx; y = dy; vx = 0f; vy = 0f
+            restX = x; restY = y
             moving = false
             lastTile = hole.at(x, y)
             return
         }
+        if (depth > 0f && speed < TEETER_SPEED) {
+            // Teetering on the edge: it stays out.
+            vx = 0f; vy = 0f; moving = false
+            restX = x; restY = y
+            ev.onTeeter(x, y)
+            return
+        }
+        if (depth <= 0f) { lastDryX = x; lastDryY = y; entryVx = vx; entryVy = vy }
         if (now == Tile.SAND && lastTile != Tile.SAND && speed > 15f) ev.onSand(x, y, speed)
         lastTile = now
 
@@ -141,6 +170,40 @@ class Physics(val hole: Hole) {
             restX = x; restY = y
             ev.onStop(x, y)
         }
+    }
+
+    private var lastDryX = x
+    private var lastDryY = y
+    private var entryVx = 0f
+    private var entryVy = 0f
+
+    /**
+     * Where a ball that went in is dropped: on dry land, a little back along its path from
+     * the last point it was dry (golf's penalty-area relief), never in a wall or on a trunk.
+     */
+    private fun dropPoint(): Pair<Float, Float> {
+        val coast = hole.coast
+        val sp = hypot(entryVx, entryVy)
+        val ux = if (sp > 1e-3f) entryVx / sp else 0f
+        val uy = if (sp > 1e-3f) entryVy / sp else 0f
+        var k = 0f
+        while (k <= 24f) {
+            val px = lastDryX - ux * k
+            val py = lastDryY - uy * k
+            if (coast.landDepth(px, py) >= BALL_R + 1f && !hole.at(px, py).solid && clearOfPosts(px, py)) return px to py
+            k += 1f
+        }
+        return if (coast.isLand(lastDryX, lastDryY)) lastDryX to lastDryY else restX to restY
+    }
+
+    private fun clearOfPosts(px: Float, py: Float): Boolean {
+        val p = hole.posts
+        var i = 0
+        while (i < p.size) {
+            if (hypot(px - p[i], py - p[i + 1]) < BALL_R + Hole.POST_R + 0.5f) return false
+            i += 2
+        }
+        return true
     }
 
     private var impactWood = false
@@ -242,6 +305,13 @@ class Physics(val hole: Hole) {
         const val FUNNEL_G = 260f
         const val STOP_SPEED = 3f
         const val POST_E = 0.55f
+        /** Below this speed a ball reaching the water's edge stops on it instead of going in. */
+        const val TEETER_SPEED = 40f
+        const val LIP_PULL = 160f
+        /** The wet band along the shore (px from the water) and its drag. */
+        const val WET_BAND = 3f
+        const val WET_C = 220f
+        const val WET_K = 3.5f
         const val WALL_GRIP = 0.94f
         const val MAX_ROLL_S = 18f
 

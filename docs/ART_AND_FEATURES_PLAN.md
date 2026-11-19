@@ -1,6 +1,16 @@
 # Golf Alone: water, trees and new features
 
-> **Status:** plan only. Strike or reorder anything by ID. The order of work lives in one
+> **Status:** you chose launch ramps (D1), W1 water with palm A (D2), and ramps and loft before
+> the tide (D3), plus the penalty drop near where the ball went in (Q0d).
+> - **Q0 is built.** The splash follows the drawn coast, and only once the whole ball is in. A slow
+>   ball teeters (in a test, shots at 40–48% power towards the sea teeter, 49% and up go in). The
+>   drop is near the entry point, and a wet band slows rolls.
+> - **The slice is built:** W1 water at 8 frames, the tiling sea beyond the map, palm A on the
+>   leaf ramp with swaying fronds and a canopy-shaped shadow, and the draw-time readout (Q6).
+> - **Waiting on your phone check before step 2.** You said you're not fully sold on the palm and
+>   grass yet.
+>
+> Strike or reorder anything by ID. The order of work lives in one
 > place now: the **Roadmap** at the top of [PLAN.md](PLAN.md).
 >
 > **Candidates:** [`docs/style/water-trees-board.png`](style/water-trees-board.png) shows real

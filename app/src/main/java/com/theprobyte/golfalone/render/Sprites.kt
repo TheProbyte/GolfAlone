@@ -79,52 +79,63 @@ object Sprites {
 
     // ------------------------------------------------------------ palms
 
-    private val frondDx = intArrayOf(-7, 7, -6, 6, -3, 3, -1, 2)
-    private val frondDy = intArrayOf(-1, -1, 3, 3, -4, -4, 4, 4)
+    /** Palm canopy, hand-drawn (docs/style/water-trees-board.png, candidate A), on the leaf ramp. */
+    private val palmRows = listOf(
+        "...........h...........",
+        "...mml.....l.......m...",
+        "..mlhlm....l....mlhlm..",
+        ".ddmmlll...l...lllmmdd.",
+        "...ddmmlll.l.lllmmdd...",
+        "..mllllhlllmlllhllllm..",
+        ".mlhhllllllmllllllhhlm.",
+        "mllddmllllcCcllllmddllm",
+        "ldo..ddllccCcclldd..odl",
+        "do....mmllcccllmm....od",
+        "o....mlhd.lcl.dhlm....o",
+        "....mlho...l...ohlm....",
+        "....lho....l....ohl....",
+        "....do.....d.....od....",
+        "....o......o......o....",
+    )
+    private val leafColours = mapOf(
+        'o' to Palette.LEAF[0], 'd' to Palette.LEAF[1], 'm' to Palette.LEAF[2], 'l' to Palette.LEAF[3], 'h' to Palette.LEAF[4],
+        'c' to Palette.WOODS[1], 'C' to Palette.WOODS[3],
+    )
 
-    /** Where the canopy centre sits relative to the trunk base. */
+    /** Where the crown sits in the canopy sprite, and where that sits over the trunk base. */
+    private const val CROWN_X = 11
+    private const val CROWN_Y = 7
     const val CANOPY_DX = -3
     const val CANOPY_DY = -11
-    private const val CANOPY_OX = 9
-    private const val CANOPY_OY = 7
 
-    /** The canopy, generated once and outlined; [palmCanopy] only shifts it as it sways. */
-    private val canopy: Bitmap by lazy {
-        val w = 19
-        val h = 17
-        val pts = HashSet<Int>()
-        fun key(x: Int, y: Int) = y * w + x
-        for (f in frondDx.indices) {
-            val dx = frondDx[f]
-            val dy = frondDy[f]
-            val len = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
-            for (s in 0..len) {
-                val k = s / len.toFloat()
-                pts += key(CANOPY_OX + (dx * k).roundToInt(), CANOPY_OY + (dy * k + k * k * 2.5f).roundToInt())
+    /** Three poses: the frond tips (lower rows) sway a pixel either way while the crown stays put. */
+    private val palmPoses: List<Sprite> = (-1..1).map { s ->
+        val rows = palmRows.mapIndexed { y, r ->
+            if (y < 9 || s == 0) r else if (s > 0) "." + r.dropLast(1) else r.drop(1) + "."
+        }
+        Sprite("palm${if (s < 0) "-left" else if (s > 0) "-right" else ""}", rows, leafColours)
+    }
+
+    /** The canopy's silhouette, flattened onto the ground and dithered: its shadow. */
+    private val palmShadowSprite: Sprite = run {
+        val w = palmRows[0].length
+        val h = (palmRows.size + 1) / 2
+        val rows = List(h) { y ->
+            buildString {
+                for (x in 0 until w) {
+                    val a = palmRows.getOrNull(y * 2)?.getOrNull(x) ?: '.'
+                    val b = palmRows.getOrNull(y * 2 + 1)?.getOrNull(x) ?: '.'
+                    val solid = a != '.' || b != '.'
+                    val edge = y == 0 || y == h - 1 || x == 0 || x == w - 1
+                    append(if (solid && (!edge || (x + y) % 2 == 0)) 's' else '.')
+                }
             }
         }
-        for (dy in -1..1) for (dx in -1..1) pts += key(CANOPY_OX + dx, CANOPY_OY + dy)
-        val b = Pix.bitmap(w, h, Bitmap.Config.ARGB_8888)
-        for (p in pts) {
-            val x = p % w
-            val y = p / w
-            for ((ox, oy) in arrayOf(-1 to 0, 1 to 0, 0 to 1, 0 to 2)) {
-                val q = key(x + ox, y + oy)
-                if (x + ox in 0 until w && y + oy in 0 until h && q !in pts) b.setPixel(x + ox, y + oy, Palette.PALM_DARK)
-            }
-        }
-        for (p in pts) {
-            val x = p % w
-            val y = p / w
-            b.setPixel(x, y, if (key(x, y - 1) !in pts) Palette.PALM_LIGHT else Palette.PALM)
-        }
-        b.setPixel(CANOPY_OX - 1, CANOPY_OY + 1, Palette.TRUNK_DARK)
-        b.setPixel(CANOPY_OX + 1, CANOPY_OY + 1, Palette.TRUNK_DARK)
-        b
+        Sprite("palm-shadow", rows, mapOf('s' to Palette.alpha(Palette.GRASS[0], 70)))
     }
 
     fun palmShadow(c: Canvas, bx: Int, by: Int, sway: Int) {
-        Pix.oval(c, bx + 4f + sway, by + 1.5f, 8f, 3.5f, Palette.alpha(Palette.OUTLINE_GREEN, 70))
+        palmShadowSprite.draw(c, bx + 4 + sway - palmShadowSprite.w / 2, by - 2)
     }
 
     fun palmTrunk(c: Canvas, bx: Int, by: Int) {
@@ -138,16 +149,16 @@ object Sprites {
         }
     }
 
-    /** The canopy, drawn over the ball. [sway] shifts it by a pixel in the breeze. */
+    /** The canopy, drawn over the ball, in the pose for [sway] (-1, 0 or 1). */
     fun palmCanopy(c: Canvas, bx: Int, by: Int, sway: Int) {
-        c.drawBitmap(canopy, (bx + CANOPY_DX + sway - CANOPY_OX).toFloat(), (by + CANOPY_DY - CANOPY_OY).toFloat(), blit)
+        palmPoses[(sway + 1).coerceIn(0, 2)].draw(c, bx + CANOPY_DX - CROWN_X, by + CANOPY_DY - CROWN_Y)
     }
 
     /** True if ([x], [y]) is under the canopy of the palm based at ([bx], [by]). */
     fun underCanopy(x: Float, y: Float, bx: Float, by: Float): Boolean {
-        val cx = bx + CANOPY_DX
-        val cy = by + CANOPY_DY + 1
-        return x > cx - 9 && x < cx + 9 && y > cy - 7 && y < cy + 7
+        val left = bx + CANOPY_DX - CROWN_X
+        val top = by + CANOPY_DY - CROWN_Y
+        return x > left + 2 && x < left + palmRows[0].length - 2 && y > top + 1 && y < top + palmRows.size - 1
     }
 
     fun palmSway(time: Float, seed: Int): Int = (sin(time * 1.1f + seed * 1.7f) * 0.9f).roundToInt()
@@ -211,5 +222,5 @@ object Sprites {
     }
 
     /** Every baked sprite, for the contact sheet. */
-    val all: List<Sprite> get() = ballFrames + ballShadow + ballGhost + flagFrames + cupSprite + icons
+    val all: List<Sprite> get() = ballFrames + ballShadow + ballGhost + flagFrames + cupSprite + icons + palmPoses + palmShadowSprite
 }

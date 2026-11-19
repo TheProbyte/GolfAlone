@@ -161,7 +161,7 @@ class ArtCandidatesTest {
         val b = Pix.bitmap(t.w, t.h)
         val cv = Canvas(b)
         cv.drawBitmap(t.ground, 0f, 0f, Sprites.blit)
-        if (water == null) cv.drawBitmap(t.water[frame % Terrain.FRAMES], 0f, 0f, Sprites.blit)
+        if (water == null) cv.drawBitmap(t.water(frame), 0f, 0f, Sprites.blit)
         else {
             val px = IntArray(t.w * t.h)
             b.getPixels(px, 0, t.w, 0, 0, t.w, t.h)

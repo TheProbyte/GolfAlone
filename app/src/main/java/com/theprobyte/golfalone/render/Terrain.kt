@@ -26,7 +26,27 @@ class Terrain(private val hole: Hole) {
     val w = hole.pxW
     val h = hole.pxH
     val ground: Bitmap
-    val water: Array<Bitmap>
+    @Volatile private var waterFrames: Array<Bitmap>? = null
+
+    /** The sea's moving layer, [FRAMES] frames, built on first use (see [releaseWater]). */
+    fun water(f: Int): Bitmap = (waterFrames ?: buildWater())[f % FRAMES]
+
+    @Synchronized private fun buildWater(): Array<Bitmap> {
+        waterFrames?.let { return it }
+        val frames = Array(FRAMES) { f ->
+            val o = IntArray(w * h)
+            for (y in 0 until h) for (x in 0 until w) o[y * w + x] = waterPixel(x, y, f)
+            Pix.bitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(o, 0, w, 0, 0, w, h) }
+        }
+        waterFrames = frames
+        return frames
+    }
+
+    /** Frees the water frames (about 2.5 MB on the longest hole); they rebuild when next needed. */
+    fun releaseWater() { waterFrames = null }
+
+    /** Builds the water frames now (call off the main thread for the next hole). */
+    fun prepareWater() { water(0) }
 
     /** Visual land mask per pixel, after smoothing. */
     private val land = BooleanArray(w * h)
@@ -47,11 +67,6 @@ class Terrain(private val hole: Hole) {
         decorate(px)
         castShadows(px)
         ground = Pix.bitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, w, 0, 0, w, h) }
-        water = Array(FRAMES) { f ->
-            val o = IntArray(w * h)
-            for (y in 0 until h) for (x in 0 until w) o[y * w + x] = waterPixel(x, y, f)
-            Pix.bitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(o, 0, w, 0, 0, w, h) }
-        }
     }
 
     private fun tileAt(x: Int, y: Int): Tile = hole.tile(Math.floorDiv(x, TILE), Math.floorDiv(y, TILE))
@@ -81,10 +96,7 @@ class Terrain(private val hole: Hole) {
     }
 
     private fun computeLand() {
-        val v = blur(4) { !it.water }
-        for (y in 0 until h) for (x in 0 until w) {
-            land[y * w + x] = v[y * w + x] + (hash(x / 2, y / 2, 9) - 0.5f) * 0.14f > 0.5f
-        }
+        System.arraycopy(hole.coast.land, 0, land, 0, land.size)
     }
 
     private fun computeKinds() {
@@ -164,12 +176,15 @@ class Terrain(private val hole: Hole) {
                 2 -> return Palette.BANK_DARK
                 3 -> return Palette.BANK_DARKER
             }
+            // Clean depth bands; the first row of each deeper band keeps the lighter colour on
+            // alternate pixels, a contour rather than a dither field.
             var c = when {
-                d < 2.5f + b * 2f -> Palette.SHOAL
-                d < 6.5f + b * 2f -> Palette.SHALLOW
-                d < 11f + b * 3f -> Palette.MID
+                d < 3f -> Palette.SHOAL
+                d < 7f -> Palette.SHALLOW
+                d < 14f -> Palette.MID
                 else -> Palette.DEEP
             }
+            if ((d in 3f..4f || d in 7f..8f || d in 14f..15f) && (x + y) % 2 == 0) c = Palette.lighter(c)
             // The bank shades the water at its foot.
             if (y > 0 && bank[i - w] > 0) c = Palette.darker(c)
             else if (y > 1 && bank[i - 2 * w] > 0 && (x + y) % 2 == 0) c = Palette.darker(c)
@@ -353,24 +368,30 @@ class Terrain(private val hole: Hole) {
         }
     }
 
+    /**
+     * The sea's moving layer (W1 "Crests"):
+     * - A shore wash runs up the beach and back, leaving wet sand as it pulls away.
+     * - Short wave crests travel across open water.
+     * Everything else is transparent over the static bands in [ground].
+     */
     private fun waterPixel(x: Int, y: Int, f: Int): Int {
         val i = y * w + x
-        if (land[i] || bank[i] > 0) return 0
         val d = edge[i]
-        // A continuous foam line hugging the shore, with a broken second row.
-        if (d < 1.3f) return Palette.alpha(Palette.FOAM, 230)
-        if (d < 2.3f && ((x / 2 + y + f) % 4) != 0) return Palette.alpha(Palette.FOAM, 110)
-        // A dashed ripple ring walking out from the shore.
-        val r = 3.5f + f * 1.5f
-        if (d >= r && d < r + 1f && ((x + y) / 2) % 3 != 0) return Palette.alpha(Palette.RIPPLE, 150 - f * 30)
-        // Twinkles on open water, a 2 px glint on a sparse jittered grid.
-        if (d > 8f) {
-            val gx = x / 9
-            val gy = y / 9
-            val jx = gx * 9 + (hash(gx, gy, 61) * 7).toInt()
-            val jy = gy * 9 + (hash(gx, gy, 62) * 7).toInt()
-            val on = ((hash(gx, gy, 63) * FRAMES).toInt() + f) % FRAMES < 2
-            if (on && y == jy && (x == jx || x == jx + 1)) return Palette.alpha(Palette.RIPPLE, 210)
+        val phase = 0.5f + 0.5f * kotlin.math.sin(2f * Math.PI.toFloat() * f / FRAMES)
+        if (land[i]) {
+            // Wet sand where the wash just pulled back (not on a cliff top above a bank).
+            val cliff = y + 1 < h && bank[i + w] > 0
+            val beach = kind[i] != K_WALL && kind[i] != K_WOOD
+            return if (beach && !cliff && d < 0.8f + 1.6f * (1f - phase)) Palette.alpha(Palette.SANDS[2], 150) else 0
+        }
+        if (bank[i] > 0) return 0
+        val reach = 0.6f + 2.2f * phase
+        if (d < reach) return if (d > reach - 1.1f) Palette.FOAM else Palette.lerp(Palette.SHOAL, Palette.FOAM, 0.5f)
+        if (d > 9f) {
+            when (crest(x, y, f)) {
+                1 -> return Palette.SHOAL
+                2 -> return Palette.SEA[0]
+            }
         }
         return 0
     }
@@ -427,7 +448,45 @@ class Terrain(private val hole: Hole) {
     }
 
     companion object {
-        const val FRAMES = 4
+        const val FRAMES = 8
+
+        /** Size of the tiling sea beyond the map: whole crest cells, so it repeats seamlessly. */
+        const val SEA_W = 78
+        const val SEA_H = 72
+
+        /**
+         * Travelling wave crests on open water: a short light dash (1) with a dark trough under
+         * it (2), on a jittered grid that wraps every [SEA_W]×[SEA_H] so the sea can tile.
+         */
+        fun crest(x: Int, y: Int, f: Int): Int {
+            val cx = x - f
+            val gx = Math.floorMod(Math.floorDiv(cx, 13), 6)
+            val gy = Math.floorMod(Math.floorDiv(y, 9), 8)
+            if (hash(gx, gy, 74) > 0.5f) return 0 // only about half the cells carry a crest
+            val ox = Math.floorDiv(cx, 13) * 13
+            val oy = Math.floorDiv(y, 9) * 9
+            val jx = ox + (hash(gx, gy, 71) * 8).toInt()
+            val jy = oy + (hash(gx, gy, 72) * 6).toInt()
+            val life = (f + (hash(gx, gy, 73) * 8).toInt()) % 8
+            val len = intArrayOf(0, 2, 3, 4, 4, 3, 2, 0)[life]
+            if (len == 0 || cx < jx || cx >= jx + len) return 0
+            return if (y == jy) 1 else if (y == jy + 1) 2 else 0
+        }
+
+        /** The open sea beyond the map, [FRAMES] tiles of [SEA_W]×[SEA_H]. */
+        val sea: Array<Bitmap> by lazy {
+            Array(FRAMES) { f ->
+                val px = IntArray(SEA_W * SEA_H)
+                for (y in 0 until SEA_H) for (x in 0 until SEA_W) {
+                    px[y * SEA_W + x] = when (crest(x, y, f)) {
+                        1 -> Palette.SHOAL
+                        2 -> Palette.SEA[0]
+                        else -> Palette.DEEP
+                    }
+                }
+                Pix.bitmap(SEA_W, SEA_H).apply { setPixels(px, 0, SEA_W, 0, 0, SEA_W, SEA_H) }
+            }
+        }
         const val BANK_H = 3
         /** First row of a wall tile's front face (rows FACE_TOP..7). */
         const val FACE_TOP = 5
@@ -443,11 +502,6 @@ class Terrain(private val hole: Hole) {
         private val BAYER = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
         fun bayer(x: Int, y: Int): Int = BAYER[(y and 3) * 4 + (x and 3)]
 
-        fun hash(x: Int, y: Int, s: Int): Float {
-            var h = x * 374761393 + y * 668265263 + s * 1442695041
-            h = (h xor (h ushr 13)) * 1274126177
-            h = h xor (h ushr 16)
-            return (h and 0xffffff) / 16777216f
-        }
+        fun hash(x: Int, y: Int, s: Int): Float = com.theprobyte.golfalone.game.Noise.hash(x, y, s)
     }
 }

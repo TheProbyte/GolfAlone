@@ -16,9 +16,9 @@
 
 ## Roadmap (the single ordered list of what's next)
 
-0. **Forgiving water (Q0):** splashes follow the drawn coast, the whole ball has to be in, a slow
+0. ✅ **Forgiving water (Q0):** splashes follow the drawn coast, the whole ball has to be in, a slow
    ball teeters on the lip, and the penalty drop is near where it went in. This is your top annoyance.
-1. **Art slice, then a phone check:** the chosen water and palm (A1, A2, A5) on holes 1 and 5,
+1. ✅ **Art slice (built; waiting on your phone check):** the chosen water and palm (A1, A2, A5) on holes 1 and 5,
    plus the draw-time readout (Q6). Nothing else is converted until you've seen it on the phone.
 2. **The rest of the art pass:** ponds, banks, boulders, decoration, driftwood and effects (A3, A4, A6–A9).
 3. **QoL batch:** what you found annoying, then Q1–Q5.

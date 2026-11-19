@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.hypot
 
 class PhysicsTest {
 
@@ -59,13 +60,48 @@ class PhysicsTest {
         assertEquals(a.y, b.y, 0f)
     }
 
-    @Test fun waterSendsTheBallBack() {
-        val p = Physics(Holes.COVE_1)
-        var splashed = false
+    @Test fun waterDropsTheBallNearWhereItWentIn() {
+        val hole = Holes.COVE_1
+        val p = Physics(hole)
+        var splashAt: Pair<Float, Float>? = null
         p.shoot(-1f, 0f, 1f) // left from the tee, into the sea
-        p.settle(object : PhysicsEvents { override fun onSplash(x: Float, y: Float) { splashed = true } })
-        assertTrue(splashed)
-        assertTrue(abs(p.x - Holes.COVE_1.teeX) < 0.01f && abs(p.y - Holes.COVE_1.teeY) < 0.01f)
+        p.settle(object : PhysicsEvents {
+            override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { splashAt = x to y }
+        })
+        val s = splashAt
+        assertNotNull("splashed", s)
+        assertFalse("not back on the tee", abs(p.x - hole.teeX) < 0.01f && abs(p.y - hole.teeY) < 0.01f)
+        assertTrue("dropped on dry land", hole.coast.landDepth(p.x, p.y) >= Physics.BALL_R)
+        assertTrue("near where it went in", hypot(p.x - s!!.first, p.y - s.second) < 30f)
+        println("splash at $s, dropped at ${p.x},${p.y}")
+    }
+
+    /** A sea to the left of a strip of rough: soft putts towards the water never go in. */
+    private val shore = box(
+        "~~~~~~~~~~~~",
+        "~~~~~,,,,,,,",
+        "~~~~~,,,T,,O",
+        "~~~~~,,,,,,,",
+        "~~~~~~~~~~~~",
+    )
+
+    @Test fun aBallReachingTheWaterSlowlyTeetersBeforeAnyGoIn() {
+        var firstTeeter = -1
+        var firstSplash = -1
+        for (i in 1..100) {
+            val p = Physics(shore)
+            var outcome = 0
+            p.shoot(-1f, 0f, i / 100f)
+            p.settle(object : PhysicsEvents {
+                override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { outcome = 2 }
+                override fun onTeeter(x: Float, y: Float) { outcome = 1 }
+            })
+            if (outcome == 1 && firstTeeter < 0) firstTeeter = i
+            if (outcome == 2 && firstSplash < 0) firstSplash = i
+        }
+        println("towards the sea: first teeter at power ${firstTeeter / 100f}, first splash at ${firstSplash / 100f}")
+        assertTrue("some shots teeter on the edge", firstTeeter > 0)
+        assertTrue("teetering comes before going in", firstSplash < 0 || firstTeeter < firstSplash)
     }
 
     @Test fun fullDriveTravelsAboutAScreen() {

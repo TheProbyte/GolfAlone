@@ -54,6 +54,9 @@ class Hole(val name: String, val par: Int, rows: List<String>) {
     val pxW get() = w * TILE
     val pxH get() = h * TILE
 
+    /** The drawn coastline, per pixel; physics and rendering share it. */
+    val coast: Coast by lazy { Coast(this) }
+
     init {
         require(rows.all { it.length == w }) {
             "$name: rows must all be $w wide: " + rows.withIndex().filter { it.value.length != w }.map { it.index }
