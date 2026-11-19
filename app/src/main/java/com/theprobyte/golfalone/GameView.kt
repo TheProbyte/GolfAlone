@@ -15,6 +15,7 @@ import android.view.View
 import android.view.WindowInsets
 import com.theprobyte.golfalone.game.Course
 import com.theprobyte.golfalone.game.Hole
+import com.theprobyte.golfalone.game.HoleState
 import com.theprobyte.golfalone.game.Holes
 import com.theprobyte.golfalone.game.Physics
 import com.theprobyte.golfalone.game.PhysicsEvents
@@ -81,22 +82,26 @@ class GameView(
 
     // ---------------------------------------------------------------- course
 
-    val course: Course = Holes.COVE
+    /** The course being played (the last one chosen, if it's open). */
+    var course: Course = Holes.course(progress.lastCourse)?.takeIf { courseOpen(it) } ?: Holes.COVE
+        private set
     /** The course's time of day, set before anything is baked from the palette. */
-    @Suppress("unused") internal val moodSet = Palette.setMood(course.mood)
-    internal val n = course.holes.size
+    @Suppress("unused") internal val moodSet = run { progress.course = course.id; Palette.setMood(course.mood) }
+    internal val n get() = course.holes.size
     internal val builder = Executors.newSingleThreadExecutor { r -> Thread(r, "terrain").apply { isDaemon = true } }
-    internal val terrains: List<Future<Terrain>> = course.holes.map { h -> builder.submit<Terrain> { Terrain(h) } }
-    internal val thumbs = arrayOfNulls<Bitmap>(n)
+    internal var terrains: List<Future<Terrain>> = course.holes.map { h -> builder.submit<Terrain> { Terrain(h) } }
+    internal var thumbs = arrayOfNulls<Bitmap>(n)
     internal var thumbBox = 0L
 
     var holeIndex = 0
         private set
     var hole: Hole = course.holes[0]
         private set
-    internal var physics = Physics(hole)
+    /** What changes on this hole as you play (tide, crabs, planks, barrels). */
+    internal var holeState = HoleState(hole)
+    internal var physics = Physics(hole, holeState)
     /** Looks ahead along a shot near the cup, to slow down the finish of a great one. */
-    internal var scratch = Physics(hole)
+    internal var scratch = Physics(hole, HoleState(hole))
     internal val ambient = Ambient()
     internal val spriteFx = SpriteFx()
     internal lateinit var terrain: Terrain
@@ -111,9 +116,9 @@ class GameView(
     /** A full round (scores count) rather than practising one hole. */
     var courseRun = false
         private set
-    internal val scores = IntArray(n)
+    internal var scores = IntArray(n)
     internal var courseNewBest = false
-    internal val flownOver = BooleanArray(n)
+    internal var flownOver = BooleanArray(n)
 
     /** The hole shown in the select carousel, and its slide animation. */
     internal var sel = 0
@@ -132,6 +137,7 @@ class GameView(
     internal val wc = Canvas()
     internal val uc = Canvas()
     internal val blit = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
+    internal val tidePaint = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
     internal val dim = Paint().apply { isFilterBitmap = false; colorFilter = android.graphics.PorterDuffColorFilter(0xB0101828.toInt(), PorterDuff.Mode.SRC_ATOP) }
     internal val src = Rect()
     internal val dst = RectF()
@@ -198,6 +204,14 @@ class GameView(
     internal var shotY = 0f
     internal var shotLive = false
     internal var bookTab = 0
+    /** A course the round just finished has opened (shown on the scorecard), or null. */
+    internal var opened: String? = null
+    /** Time since the tide last turned (-1: settled). */
+    internal var tideT = -1f
+    /** The last buoy hit: when (-1: none) and where, for its wobble. */
+    internal var bumpT = -1f
+    internal var bumpX = 0f
+    internal var bumpY = 0f
     /** Bumped on any input or state change the UI layer shows; see [uiNeedsRedraw]. */
     internal var uiVersion = 0
     internal var uiDrawnVersion = -1
@@ -335,8 +349,9 @@ class GameView(
         holeIndex = i
         if (!backdrop) lastPlayed = i
         hole = course.holes[i]
-        physics = Physics(hole)
-        scratch = Physics(hole)
+        holeState = HoleState(hole)
+        physics = Physics(hole, holeState)
+        scratch = Physics(hole, HoleState(hole))
         terrain = terrains[i].get()
         ambient.reset(terrain)
         spriteFx.clear()
@@ -367,6 +382,47 @@ class GameView(
         flyover = !backdrop && lh > 0 && wantsFlyover()
         if (flyover) flownOver[i] = true
         camSnap = true
+    }
+
+    /** A course is open once the round before it has been finished. */
+    internal fun courseOpen(c: Course): Boolean {
+        val i = Holes.COURSES.indexOf(c)
+        return i <= 0 || progress.courseBestOf(Holes.COURSES[i - 1].id) > 0
+    }
+
+    /**
+     * Changes course: the old maps stop building, the palette moves to the new time of day
+     * (only once the builder is idle, so no map is ever baked half in one mood), and the
+     * new course's maps start building.
+     */
+    internal fun switchCourse(c: Course) {
+        if (c === course) return
+        for (f in terrains) f.cancel(false)
+        builder.submit {}.get() // wait out a map that's mid-build
+        for (f in terrains) if (f.isDone && !f.isCancelled) runCatching { f.get().releaseWater() }
+        course = c
+        progress.course = c.id
+        progress.lastCourse = c.id
+        Palette.setMood(c.mood)
+        terrains = c.holes.map { h -> builder.submit<Terrain> { Terrain(h) } }
+        thumbs = arrayOfNulls(n); thumbBox = 0L
+        postcardThumbs = arrayOfNulls(n); postcardBox = 0L
+        scores = IntArray(n)
+        flownOver = BooleanArray(n)
+        lastPlayed = 0
+        sel = 0
+        courseRun = false
+        uiVersion++
+    }
+
+    /** On the title: show the next or previous course (locked ones too, as a preview). */
+    internal fun moveCourse(d: Int) {
+        val list = Holes.COURSES
+        val k = (list.indexOf(course) + d).coerceIn(0, list.size - 1)
+        if (list[k] === course || fadeT >= 0f) return
+        sfx.tap()
+        haptics.tap(this)
+        fadeTo { switchCourse(list[k]); loadHole(0, backdrop = true); setMode(Mode.TITLE) }
     }
 
     internal fun wantsFlyover() = isLong() && !flownOver[holeIndex] && !reduceMotion
@@ -488,6 +544,7 @@ class GameView(
         val held = progress.runStrokes
         if (held > 0) {
             strokes = held
+            holeState.decode(progress.runState)
             physics.placeAt(progress.runBallX, progress.runBallY)
             flyover = false
             camSnap = true
@@ -539,8 +596,27 @@ class GameView(
             // the usual cup path (score, saved round, and the card when the game comes back).
             physics.settle(this)
             if (physics.inCup) return
+            shotOver()
         }
-        progress.saveRun(holeIndex, scores, strokes, physics.restX, physics.restY)
+        progress.saveRun(holeIndex, scores, strokes, physics.restX, physics.restY, holeState.encode())
+    }
+
+    /**
+     * A shot has come to rest: the tide and crabs move on. If the tide covers the ball it's
+     * lifted clear for free.
+     */
+    internal fun shotOver() {
+        if (physics.inCup) return
+        val wasHigh = holeState.high
+        if (physics.endShot()) say("LIFTED CLEAR", physics.x, physics.y - 8f, Palette.INK)
+        if (holeState.high != wasHigh) onTideTurn(holeState.high)
+        uiVersion++
+    }
+
+    /** The tide has turned (drawn as a crossfade between the two maps). */
+    internal fun onTideTurn(high: Boolean) {
+        tideT = 0f
+        sfx.tide(high)
     }
 
     /** The app went to the background: pause any hole in progress and save the round. */
@@ -609,7 +685,7 @@ class GameView(
                     else if (canAim && !inGestureZone(e.x, e.y)) startAim(e.x, e.y, e.getPointerId(0))
                     Mode.SELECT -> { swipeX = e.x; swipeY = e.y }
                     Mode.CARD -> tapAnywhere = courseRun && cardT > CARD_READY
-                    Mode.TITLE -> if (ly < lh / 2) logoDownT = time
+                    Mode.TITLE -> { if (ly < lh / 2) logoDownT = time; swipeX = e.x; swipeY = e.y }
                     else -> {}
                 }
             }
@@ -653,7 +729,9 @@ class GameView(
                 else if (id != NONE && hitButton(lx, ly) == id) onButton(id)
                 if (!swipeX.isNaN()) {
                     val dx = e.x - swipeX
-                    if (abs(dx) > 36f * density && abs(dx) > abs(e.y - swipeY) * 1.5f) moveSelection(if (dx < 0) 1 else -1)
+                    if (abs(dx) > 36f * density && abs(dx) > abs(e.y - swipeY) * 1.5f) {
+                        if (mode == Mode.TITLE) moveCourse(if (dx < 0) 1 else -1) else moveSelection(if (dx < 0) 1 else -1)
+                    }
                     swipeX = Float.NaN
                 }
                 if (tapAnywhere && id == NONE) { tapAnywhere = false; nextHole() }
@@ -689,9 +767,12 @@ class GameView(
     internal fun onButton(id: Int) {
         sfx.tap()
         when (id) {
-            B_PLAY -> if (hasSavedRound) continueRound() else startCourse()
+            B_PLAY -> if (!courseOpen(course)) sayUi("FINISH ${Holes.COURSES[Holes.COURSES.indexOf(course) - 1].name} FIRST")
+                else if (hasSavedRound) continueRound() else startCourse()
+            B_PREV_COURSE -> moveCourse(-1)
+            B_NEXT_COURSE -> moveCourse(1)
             B_NEW -> startCourse()
-            B_HOLES -> toSelect()
+            B_HOLES -> if (courseOpen(course)) toSelect() else sayUi("LOCKED FOR NOW")
             B_BACK -> toTitle()
             B_SETTINGS -> openSheet(Sheet.SETTINGS)
             B_BOOK -> { bookTab = 0; openSheet(Sheet.BOOK) }
@@ -730,7 +811,11 @@ class GameView(
         val next = holeIndex + 1
         if (courseRun && next >= n) {
             fadeTo {
+                val ci = Holes.COURSES.indexOf(course)
+                val nextCourse = Holes.COURSES.getOrNull(ci + 1)
+                val wasOpen = nextCourse == null || courseOpen(nextCourse)
                 courseNewBest = progress.recordCourse(scores.sum())
+                opened = if (!wasOpen && nextCourse != null && courseOpen(nextCourse)) nextCourse.name else null
                 progress.clearRun()
                 setMode(Mode.FINAL)
             }
@@ -862,6 +947,36 @@ class GameView(
         for (i in 0 until tn) tAt[i] = -9f
     }
 
+    override fun onBumper(x: Float, y: Float) {
+        sfx.bell(pan(x))
+        haptics.wall(this, 200f)
+        bumpT = 0f; bumpX = x; bumpY = y
+        ring(x, y, 0.3f, 6f, Palette.GOLD)
+    }
+
+    override fun onBreak(x: Float, y: Float) {
+        sfx.crack(pan(x))
+        haptics.splash(this)
+        if (!reduceMotion) shakeT = 0f
+        repeat(14) {
+            val a = rnd.nextFloat() * 2f * PI.toFloat()
+            val s = 20f + rnd.nextFloat() * 50f
+            spawn(x, y, cos(a) * s, sin(a) * s, 0.5f + rnd.nextFloat() * 0.3f, if (it % 2 == 0) Palette.WOOD_LIGHT else Palette.WOOD_DARK)
+        }
+        say("SMASH!", x, y - 8f, Palette.GOLD)
+    }
+
+    override fun onBarrel(x: Float, y: Float, impact: Float) {
+        sfx.barrel(impact, pan(x))
+        haptics.wall(this, impact)
+    }
+
+    override fun onBarrelSink(x: Float, y: Float) {
+        sfx.splash(pan(x))
+        spriteFx.splash(x, y)
+        ring(x, y, 0.7f, 9f, Palette.FOAM)
+    }
+
     override fun onLipOut(x: Float, y: Float, speed: Float) {
         sfx.lipOut(pan(x))
         haptics.lipOut(this)
@@ -970,7 +1085,7 @@ class GameView(
         if (live && physics.moving && !slowChecked && hypot(physics.x - hole.cupX, physics.y - hole.cupY) < SLOW_R) {
             slowChecked = true
             if (!reduceMotion && (strokes == 1 || strokes <= hole.par - 2)) {
-                scratch.copyFrom(physics)
+                scratch.copyFrom(physics) // copies the hole state too, so the lookahead smashes nothing real
                 scratch.settle()
                 slowMo = scratch.inCup
             }
@@ -984,7 +1099,7 @@ class GameView(
                 rollDist += physics.speed * Physics.STEP
                 acc -= Physics.STEP
                 steps++
-                if (!physics.moving) { acc = 0f; break }
+                if (!physics.moving) { acc = 0f; shotOver(); break }
             }
             if (physics.moving && physics.speed > 90f && time - tLast > 1f / 50f) {
                 tX[tNext] = physics.x; tY[tNext] = physics.y - physics.z; tAt[tNext] = time
@@ -1009,6 +1124,8 @@ class GameView(
         if (stampT >= 0f) { stampT += dt; if (stampT > 1.2f) stampT = -1f }
         if (celebrateT >= 0f) { celebrateT += dt; if (celebrateT > 2.6f) celebrateT = -1f }
         if (punchT >= 0f) { punchT += dt; if (punchT > PUNCH_S) punchT = -1f }
+        if (tideT >= 0f) { tideT += dt; if (tideT > TIDE_S) tideT = -1f }
+        if (bumpT >= 0f) { bumpT += dt; if (bumpT > 0.3f) bumpT = -1f }
         spriteFx.update(dt)
         if (popT >= 0f) { popT += dt; if (popT > 0.5f) popT = -1f }
         if (teeterT >= 0f) { teeterT += dt; if (teeterT > 0.6f) teeterT = -1f }
@@ -1134,7 +1251,7 @@ class GameView(
     /** What's moving right now, for [RedrawPolicy]. */
     internal fun redrawState(): RedrawPolicy.State {
         var effects = msg != null || popT >= 0f || shakeT >= 0f || teeterT >= 0f || peeking || celebrateT >= 0f ||
-            punchT >= 0f || spriteFx.active || ambient.busy(time)
+            punchT >= 0f || spriteFx.active || ambient.busy(time) || tideT >= 0f || bumpT >= 0f
         if (!effects) for (i in 0 until pn) if (pLife[i] > 0f) { effects = true; break }
         if (!effects) for (i in 0 until rn) if (rT[i] >= 0f) { effects = true; break }
         return RedrawPolicy.State(
@@ -1299,7 +1416,7 @@ class GameView(
 
     internal var excluding = false
 
-    internal val postcardThumbs = arrayOfNulls<Bitmap>(n)
+    internal var postcardThumbs = arrayOfNulls<Bitmap>(n)
     internal var postcardBox = 0L
 
     internal val sliderX0 = IntArray(2)
@@ -1339,6 +1456,8 @@ class GameView(
     internal val sheetForTest get() = sheet
     internal val bookTabForTest get() = bookTab
     internal val slowMotion get() = slowMo
+    internal val holeStateForTest get() = holeState
+    internal val courseForTest get() = course
     internal val fading get() = fadeT >= 0f
     internal val isPaused get() = sheet == Sheet.PAUSE
     internal val isPeeking get() = peeking
@@ -1421,6 +1540,8 @@ class GameView(
         const val B_BOOK = 28
         const val B_TAB_STATS = 29
         const val B_TAB_CARDS = 30
+        const val B_PREV_COURSE = 31
+        const val B_NEXT_COURSE = 32
         /** Each half of the glide between holes (s). */
         const val GLIDE_S = 0.4f
         /** The title's backdrop moves to the next hole this often (s). */
@@ -1433,6 +1554,8 @@ class GameView(
         const val STAMP_S = 0.18f
         /** A ball stopping this close to the cup (px) is a near miss. */
         const val SO_CLOSE = 7f
+        /** How long the map takes to crossfade when the tide turns (s). */
+        const val TIDE_S = 0.8f
         /** Practice: holding the pause chip this long restarts the hole. */
         const val RESTART_HOLD = 0.6f
     }

@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import com.theprobyte.golfalone.GameView.Companion.GULL_SPEED
 import com.theprobyte.golfalone.GameView.Companion.NONE
 import com.theprobyte.golfalone.GameView.Companion.TEE_MARKS
+import com.theprobyte.golfalone.GameView.Companion.TIDE_S
 import com.theprobyte.golfalone.GameView.Companion.WATER_FPS
 import com.theprobyte.golfalone.GameView.Mode
 import com.theprobyte.golfalone.GameView.Sheet
@@ -43,8 +44,24 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     }
     val gx = -ix.toFloat()
     val gy = -iy.toFloat()
-    c.drawBitmap(terrain.ground, gx, gy, blit)
-    c.drawBitmap(terrain.water(wf), gx, gy, blit)
+    // The tide: draw the map for its state, crossfading from the other one as it turns.
+    val now = terrain.at(holeState.high)
+    c.drawBitmap(now.ground, gx, gy, blit)
+    c.drawBitmap(now.water(wf), gx, gy, blit)
+    if (tideT >= 0f && terrain.flooded != null) {
+        val was = terrain.at(!holeState.high)
+        val a = ((1f - tideT / TIDE_S) * 255).toInt().coerceIn(0, 255)
+        tidePaint.alpha = a
+        c.drawBitmap(was.ground, gx, gy, tidePaint)
+        c.drawBitmap(was.water(wf), gx, gy, tidePaint)
+    } else if (terrain.flooded != null && mode == Mode.PLAY && !physics.moving) {
+        // What the tide will do after this shot.
+        val warn = if (!holeState.high && holeState.highAfter) terrain.floodSoon else if (holeState.high && !holeState.highAfter) terrain.drainSoon else null
+        if (warn != null) {
+            tidePaint.alpha = (150 + 100 * sin(steppedTime * 3f)).toInt().coerceIn(0, 255)
+            c.drawBitmap(warn, gx, gy, tidePaint)
+        }
+    }
 
     // Glints drifting downhill on slopes.
     for (i in slopeTiles) {

@@ -25,6 +25,13 @@ interface PhysicsEvents {
     fun onLipOut(x: Float, y: Float, speed: Float) {}
     fun onCup(x: Float, y: Float, speed: Float) {}
     fun onStop(x: Float, y: Float) {}
+    /** Kicked off a bumper buoy. */
+    fun onBumper(x: Float, y: Float) {}
+    /** Smashed a cracked plank open. */
+    fun onBreak(x: Float, y: Float) {}
+    /** Knocked a barrel at [impact], or a barrel sank. */
+    fun onBarrel(x: Float, y: Float, impact: Float) {}
+    fun onBarrelSink(x: Float, y: Float) {}
 
     object None : PhysicsEvents
 }
@@ -33,7 +40,7 @@ interface PhysicsEvents {
  * The ball on a [Hole], advanced in fixed [STEP]s so a shot plays out identically at any
  * frame rate (and in unit tests). No randomness and no Android types.
  */
-class Physics(val hole: Hole) {
+class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
 
     var x = hole.teeX; private set
     var y = hole.teeY; private set
@@ -54,13 +61,22 @@ class Physics(val hole: Hole) {
     private var lipped = false
     private var lastTile = hole.at(x, y)
     private var touchedWall = false
+    /** The ball itself has stopped, but the shot goes on while barrels still roll. */
+    private var ballStill = false
+    private var kicks = 0
+
+    /** The ball's part of the shot is over; the shot ends once nothing else is moving. */
+    private fun endBall() {
+        ballStill = true
+        if (!state.barrelsMoving) moving = false
+    }
 
     val speed get() = hypot(vx, vy)
 
     fun reset() {
         x = hole.teeX; y = hole.teeY; restX = x; restY = y
         vx = 0f; vy = 0f; moving = false; inCup = false; lipped = false
-        z = 0f; vz = 0f
+        z = 0f; vz = 0f; ballStill = false
     }
 
     /** Hits the ball towards ([dx], [dy]) (any length) with [power] 0..1. */
@@ -74,6 +90,8 @@ class Physics(val hole: Hole) {
         lastDryX = x; lastDryY = y; entryVx = vx; entryVy = vy
         z = 0f; vz = 0f
         moving = true
+        ballStill = false
+        kicks = 0
         lipped = false
         shotTime = 0f
         lastTile = hole.at(x, y)
@@ -84,14 +102,27 @@ class Physics(val hole: Hole) {
     /** Advances one fixed step. */
     fun step(ev: PhysicsEvents = PhysicsEvents.None) {
         if (!moving) return
-        if (airborne) { stepAir(ev); return }
+        if (ballStill) {
+            shotTime += STEP
+            stepBarrels(ev)
+            if (!state.barrelsMoving || shotTime > MAX_ROLL_S) { stopBarrels(); moving = false }
+            return
+        }
+        if (airborne) { stepAir(ev); stepBarrels(ev); return }
+        stepGround(ev)
+        stepBarrels(ev)
+    }
+
+    private fun stepGround(ev: PhysicsEvents) {
         val dt = STEP
         shotTime += dt
         val tile = hole.at(x, y)
-        val coast = hole.coast
+        val coast = state.coast
         val inWater = coast.waterDepth(x, y)
         // The beach's wet band and the very edge drag harder, so long rolls tend to die on the sand.
-        val wet = !tile.solid && !tile.isGreen && !tile.isRamp && (inWater > 0f || coast.landDepth(x, y) < WET_BAND)
+        // Shallows, decks and mud have their own feel right up to the edge.
+        val wet = !tile.solid && !tile.isGreen && !tile.isRamp && !tile.shallow && tile != Tile.DECK && tile != Tile.MUD &&
+            (inWater > 0f || coast.landDepth(x, y) < WET_BAND)
         val c = if (wet) max(tile.c, WET_C) else tile.c
         val k = if (wet) max(tile.k, WET_K) else tile.k
 
@@ -102,8 +133,8 @@ class Physics(val hole: Hole) {
             val f = ns / sp
             vx *= f; vy *= f
         }
-        // Right on the edge, the bank tips the ball back towards land.
-        if (inWater > 0f) {
+        // Right on the edge, the bank tips the ball back towards land (a current carries it on).
+        if (inWater > 0f && !tile.flows) {
             val gx = coast.waterDepth(x + 1f, y) - coast.waterDepth(x - 1f, y)
             val gy = coast.waterDepth(x, y + 1f) - coast.waterDepth(x, y - 1f)
             val gl = hypot(gx, gy)
@@ -114,6 +145,11 @@ class Physics(val hole: Hole) {
         // A ramp is a steep climb: it slows the ball on the way up and rolls a slow one back.
         vx -= tile.rampX * RAMP_G * dt
         vy -= tile.rampY * RAMP_G * dt
+        // A current draws the ball towards its own drift.
+        if (tile.flows) {
+            vx += (tile.flowX * CURRENT_V - vx) * CURRENT_K * dt
+            vy += (tile.flowY * CURRENT_V - vy) * CURRENT_K * dt
+        }
 
         // Gentle funnel into the cup for slow balls.
         val cdx = hole.cupX - x
@@ -154,24 +190,29 @@ class Physics(val hole: Hole) {
             ev.onSplash(x, y, dx, dy)
             x = dx; y = dy; vx = 0f; vy = 0f
             restX = x; restY = y
-            moving = false
+            endBall()
             lastTile = hole.at(x, y)
             return
         }
-        if (depth > 0f && speed < TEETER_SPEED && headingDeeper()) {
+        if (depth > 0f && speed < TEETER_SPEED && !tile.flows && headingDeeper()) {
             // Teetering on the edge: it stays out, settling back on the last dry spot (on top of
             // the bank, so it's never drawn on the cliff face, and a soft shot from here moves).
             vx = 0f; vy = 0f
             if (coast.isLand(lastDryX, lastDryY)) { x = lastDryX; y = lastDryY }
             // On a ramp's lip there's nowhere to rest: it simply rolls back down.
             if (hole.at(x, y).isRamp) return
-            moving = false
+            endBall()
             restX = x; restY = y
             ev.onTeeter(x, y)
             return
         }
         if (depth <= 0f) { lastDryX = x; lastDryY = y; entryVx = vx; entryVy = vy }
         if (now == Tile.SAND && lastTile != Tile.SAND && speed > 15f) ev.onSand(x, y, speed)
+        // Mud swallows a ball rolling into it.
+        if (now == Tile.MUD && lastTile != Tile.MUD) {
+            vx *= MUD_PLUG; vy *= MUD_PLUG
+            if (speed > 15f) ev.onSand(x, y, speed)
+        }
         lastTile = now
 
         // The cup: slow balls drop, fast ones lip out and are flung round the rim.
@@ -179,7 +220,7 @@ class Physics(val hole: Hole) {
         if (d < CUP_R) {
             sp = speed
             if (sp < CAPTURE_SPEED) {
-                inCup = true; moving = false
+                inCup = true; endBall()
                 ev.onCup(x, y, sp)
                 x = hole.cupX; y = hole.cupY; vx = 0f; vy = 0f
                 return
@@ -200,8 +241,8 @@ class Physics(val hole: Hole) {
         // Stop when slow and nothing (slope) keeps it going, or after a long roll.
         sp = speed
         val slopePush = SLOPE_G * hypot(tile.slopeX, tile.slopeY) + RAMP_G * hypot(tile.rampX, tile.rampY)
-        if ((sp < STOP_SPEED && (slopePush < c || touchedWall)) || shotTime > MAX_ROLL_S) {
-            vx = 0f; vy = 0f; moving = false
+        if ((sp < STOP_SPEED && (slopePush < c || touchedWall) && !tile.flows) || shotTime > MAX_ROLL_S) {
+            vx = 0f; vy = 0f; endBall()
             restX = x; restY = y
             ev.onStop(x, y)
         }
@@ -209,7 +250,7 @@ class Physics(val hole: Hole) {
 
     /** Whether the ball is moving towards deeper water (down the coast's depth gradient). */
     private fun headingDeeper(): Boolean {
-        val coast = hole.coast
+        val coast = state.coast
         val gx = coast.waterDepth(x + 1f, y) - coast.waterDepth(x - 1f, y)
         val gy = coast.waterDepth(x, y + 1f) - coast.waterDepth(x, y - 1f)
         return vx * gx + vy * gy > 0f
@@ -225,7 +266,7 @@ class Physics(val hole: Hole) {
      * the last point it was dry (golf's penalty-area relief), never in a wall or on a trunk.
      */
     private fun dropPoint(): Pair<Float, Float> {
-        val coast = hole.coast
+        val coast = state.coast
         val sp = hypot(entryVx, entryVy)
         val ux = if (sp > 1e-3f) entryVx / sp else 0f
         val uy = if (sp > 1e-3f) entryVy / sp else 0f
@@ -247,6 +288,19 @@ class Physics(val hole: Hole) {
             if (hypot(px - p[i], py - p[i + 1]) < BALL_R + Hole.POST_R + 0.5f) return false
             i += 2
         }
+        return clearOfBodies(px, py, 0.5f)
+    }
+
+    /** Clear of corals, buoys, crabs and barrels by [gap]. */
+    private fun clearOfBodies(px: Float, py: Float, gap: Float): Boolean {
+        fun clear(a: FloatArray, r: Float): Boolean {
+            var i = 0
+            while (i < a.size) { if (hypot(px - a[i], py - a[i + 1]) < BALL_R + r + gap) return false; i += 2 }
+            return true
+        }
+        if (!clear(hole.corals, Hole.CORAL_R) || !clear(hole.buoys, Hole.BUOY_R)) return false
+        for (c in hole.crabs.indices) if (hypot(px - state.crabX(c), py - state.crabY(c)) < BALL_R + Hole.CRAB_R + gap) return false
+        for (b in state.bx.indices) if (!state.sunk[b] && hypot(px - state.bx[b], py - state.by[b]) < BALL_R + Hole.BARREL_R + gap) return false
         return true
     }
 
@@ -285,7 +339,7 @@ class Physics(val hole: Hole) {
             return
         }
         collideWalls(ev, max(z, 0f))
-        if (z <= 0f && hole.coast.waterDepth(x, y) >= BALL_R) {
+        if (z <= 0f && state.coast.waterDepth(x, y) >= BALL_R) {
             // Came down in the water: no bounce, no thump. The ground step splashes it.
             z = 0f; vz = 0f
             return
@@ -313,7 +367,7 @@ class Physics(val hole: Hole) {
             if (impact > BOUNCE_MIN) { vz = impact * LAND_BOUNCE; z = 0.001f } else vz = 0f
             lastTile = hole.at(x, y)
         }
-        if (shotTime > MAX_ROLL_S) { vx = 0f; vy = 0f; vz = 0f; z = 0f; moving = false; restX = x; restY = y; ev.onStop(x, y) }
+        if (shotTime > MAX_ROLL_S) { vx = 0f; vy = 0f; vz = 0f; z = 0f; endBall(); restX = x; restY = y; ev.onStop(x, y) }
     }
 
     /** Height of the tallest solid whose footprint holds ([px], [py]), or 0. */
@@ -321,7 +375,10 @@ class Physics(val hole: Hole) {
         val tx = floor(px / TILE).toInt()
         val ty = floor(py / TILE).toInt()
         var h = 0f
-        if (hole.tile(tx, ty) == Tile.WALL && !hole.rails.isBoulder(tx, ty)) h = WALL_H
+        val t = hole.tile(tx, ty)
+        if (t == Tile.WALL && !hole.rails.isBoulder(tx, ty)) h = WALL_H
+        else if (t == Tile.HULL) h = WALL_H
+        else if (t == Tile.PLANK && !state.plankBroken(tx, ty)) h = WOOD_H
         val rails = hole.rails
         for (i in rails.near(tx, ty)) {
             if (rails.distance(i, px, py) < rails.r[i]) {
@@ -340,6 +397,8 @@ class Physics(val hole: Hole) {
         val ty = floor(py / TILE).toInt()
         val t = hole.tile(tx, ty)
         if (t == Tile.WALL && !hole.rails.isBoulder(tx, ty)) return true
+        if (t == Tile.HULL || (t == Tile.PLANK && !state.plankBroken(tx, ty))) return true
+        if (!clearOfBodies(px, py, 0.5f - BALL_R)) return true
         val rails = hole.rails
         for (i in rails.near(tx, ty)) if (rails.distance(i, px, py) < rails.r[i] + 0.5f) return true
         val p = hole.posts
@@ -362,6 +421,7 @@ class Physics(val hole: Hole) {
             // Driftwood and boulders collide as rails (below), not as square tiles.
             val tt = hole.tile(tx, ty)
             if (!tt.solid || tt == Tile.WOOD || rails.isBoulder(tx, ty) || height >= WALL_H) continue
+            if (tt == Tile.PLANK) { if (height < WOOD_H) hitPlank(tx, ty, ev); continue }
             val left = (tx * TILE).toFloat()
             val top = (ty * TILE).toFloat()
             val px = min(max(x, left), left + TILE)
@@ -384,7 +444,7 @@ class Physics(val hole: Hole) {
             val vn = vx * nx + vy * ny
             if (vn < 0f) {
                 bounce(nx, ny, vn, hole.tile(tx, ty).e)
-                if (-vn > maxImpact) { maxImpact = -vn; impactWood = hole.tile(tx, ty) == Tile.WOOD }
+                if (-vn > maxImpact) { maxImpact = -vn; impactWood = hole.tile(tx, ty).wooden }
             }
         }
         // Rails: logs, diagonal wall joins and boulders.
@@ -437,7 +497,254 @@ class Physics(val hole: Hole) {
                 if (-vn > maxImpact) { maxImpact = -vn; impactWood = true }
             }
         }
+        collideBodies(ev, height)
         if (maxImpact > 6f) ev.onWall(x, y, maxImpact, impactWood)
+    }
+
+    /** A cracked plank: a hard enough hit smashes it (the ball runs on, slowed); otherwise it bounces. */
+    private fun hitPlank(tx: Int, ty: Int, ev: PhysicsEvents) {
+        if (state.plankBroken(tx, ty)) return
+        val r = BALL_R
+        val left = (tx * TILE).toFloat()
+        val top = (ty * TILE).toFloat()
+        val px = min(max(x, left), left + TILE)
+        val py = min(max(y, top), top + TILE)
+        var nx = x - px
+        var ny = y - py
+        val d2 = nx * nx + ny * ny
+        if (d2 >= r * r) return
+        val d = sqrt(d2)
+        if (d < 1e-4f) { val sp = max(speed, 1e-4f); nx = -vx / sp; ny = -vy / sp } else { nx /= d; ny /= d }
+        val vn = vx * nx + vy * ny
+        if (-vn > PLANK_BREAK) {
+            state.broken[hole.plankAt(tx, ty)] = true
+            vx *= PLANK_KEEP; vy *= PLANK_KEEP
+            ev.onBreak((tx + 0.5f) * TILE, (ty + 0.5f) * TILE)
+            return
+        }
+        x = px + nx * r
+        y = py + ny * r
+        touchedWall = true
+        if (vn < 0f) {
+            bounce(nx, ny, vn, Tile.PLANK.e)
+            if (-vn > 6f) ev.onWall(x, y, -vn, true)
+        }
+    }
+
+    /** Corals, buoys, crabs and barrels: round bodies. */
+    private fun collideBodies(ev: PhysicsEvents, height: Float) {
+        if (height < CORAL_H) circles(hole.corals, Hole.CORAL_R) { nx, ny, vn ->
+            bounce(nx, ny, vn, CORAL_E)
+            if (-vn > 6f) ev.onWall(x, y, -vn, false)
+        }
+        if (height < BUOY_H) circles(hole.buoys, Hole.BUOY_R) { nx, ny, vn ->
+            // A bumper: it sends the ball off faster than it came, a few times a shot at most.
+            val kick = if (kicks < MAX_KICKS) BUOY_KICK else 0f
+            kicks++
+            val out = -vn * BUOY_E + kick
+            val tx = vx - vn * nx
+            val ty = vy - vn * ny
+            vx = tx + out * nx
+            vy = ty + out * ny
+            val sp = speed
+            if (sp > MAX_SPEED) { vx *= MAX_SPEED / sp; vy *= MAX_SPEED / sp }
+            ev.onBumper(x, y)
+        }
+        if (height < CRAB_H) for (c in hole.crabs.indices) circle(state.crabX(c), state.crabY(c), Hole.CRAB_R) { nx, ny, vn ->
+            bounce(nx, ny, vn, CRAB_E)
+            if (-vn > 6f) ev.onWall(x, y, -vn, false)
+        }
+        if (height < BARREL_H) for (b in state.bx.indices) {
+            if (state.sunk[b]) continue
+            val dx = x - state.bx[b]
+            val dy = y - state.by[b]
+            val rr = BALL_R + Hole.BARREL_R
+            val d2 = dx * dx + dy * dy
+            if (d2 >= rr * rr || d2 < 1e-6f) continue
+            val d = sqrt(d2)
+            val nx = dx / d
+            val ny = dy / d
+            // Push apart by mass, then trade momentum along the line between them.
+            val over = rr - d
+            val wb = 1f / (1f + BARREL_M)
+            x += nx * over * (1f - wb); y += ny * over * (1f - wb)
+            state.bx[b] -= nx * over * wb; state.by[b] -= ny * over * wb
+            val rel = (vx - state.bvx[b]) * nx + (vy - state.bvy[b]) * ny
+            if (rel < 0f) {
+                val j = -(1f + BARREL_E) * rel / (1f + 1f / BARREL_M)
+                vx += j * nx; vy += j * ny
+                state.bvx[b] -= j / BARREL_M * nx; state.bvy[b] -= j / BARREL_M * ny
+                touchedWall = true
+                if (-rel > 6f) ev.onBarrel(x, y, -rel)
+            }
+        }
+    }
+
+    private inline fun circles(a: FloatArray, r: Float, hit: (Float, Float, Float) -> Unit) {
+        var i = 0
+        while (i < a.size) { circle(a[i], a[i + 1], r, hit); i += 2 }
+    }
+
+    /** The ball against a fixed round body at ([cx], [cy]): pushed out, and [hit] if it was moving in. */
+    private inline fun circle(cx: Float, cy: Float, r: Float, hit: (Float, Float, Float) -> Unit) {
+        val dx = x - cx
+        val dy = y - cy
+        val rr = BALL_R + r
+        val d2 = dx * dx + dy * dy
+        if (d2 >= rr * rr || d2 < 1e-6f) return
+        val d = sqrt(d2)
+        val nx = dx / d
+        val ny = dy / d
+        x = cx + nx * rr
+        y = cy + ny * rr
+        touchedWall = true
+        val vn = vx * nx + vy * ny
+        if (vn < 0f) hit(nx, ny, vn)
+    }
+
+    // ------------------------------------------------------------ barrels
+
+    private fun stopBarrels() { state.bvx.fill(0f); state.bvy.fill(0f) }
+
+    /** Barrels roll heavily, bounce off walls and each other, and sink in the water. */
+    private fun stepBarrels(ev: PhysicsEvents) {
+        val st = state
+        val n = st.bx.size
+        if (n == 0) return
+        val dt = STEP
+        for (i in 0 until n) {
+            if (st.sunk[i] || (st.bvx[i] == 0f && st.bvy[i] == 0f)) continue
+            val t = hole.at(st.bx[i], st.by[i])
+            var sp = hypot(st.bvx[i], st.bvy[i])
+            val ns = max(0f, sp - (t.c * 1.4f + BARREL_C + (t.k + 1.5f) * sp) * dt)
+            if (sp > 0f) { st.bvx[i] *= ns / sp; st.bvy[i] *= ns / sp }
+            st.bx[i] += st.bvx[i] * dt
+            st.by[i] += st.bvy[i] * dt
+            barrelWalls(i)
+            for (j in 0 until n) if (j != i && !st.sunk[j]) barrelPair(i, j)
+            if (st.coast.waterDepth(st.bx[i], st.by[i]) >= Hole.BARREL_R) {
+                st.sunk[i] = true; st.bvx[i] = 0f; st.bvy[i] = 0f
+                ev.onBarrelSink(st.bx[i], st.by[i])
+                continue
+            }
+            sp = hypot(st.bvx[i], st.bvy[i])
+            if (sp < STOP_SPEED) { st.bvx[i] = 0f; st.bvy[i] = 0f }
+        }
+    }
+
+    /** One barrel against walls, rails, round bodies and the cup (barrels never come to rest in it). */
+    private fun barrelWalls(i: Int) {
+        val st = state
+        val r = Hole.BARREL_R
+        fun push(nx: Float, ny: Float, e: Float) {
+            val vn = st.bvx[i] * nx + st.bvy[i] * ny
+            if (vn < 0f) { st.bvx[i] -= (1f + e) * vn * nx; st.bvy[i] -= (1f + e) * vn * ny }
+        }
+        val tx0 = floor((st.bx[i] - r) / TILE).toInt()
+        val tx1 = floor((st.bx[i] + r) / TILE).toInt()
+        val ty0 = floor((st.by[i] - r) / TILE).toInt()
+        val ty1 = floor((st.by[i] + r) / TILE).toInt()
+        for (ty in ty0..ty1) for (tx in tx0..tx1) {
+            val tt = hole.tile(tx, ty)
+            if (!tt.solid || tt == Tile.WOOD || hole.rails.isBoulder(tx, ty)) continue
+            if (tt == Tile.PLANK && st.plankBroken(tx, ty)) continue
+            val left = (tx * TILE).toFloat()
+            val top = (ty * TILE).toFloat()
+            val px = min(max(st.bx[i], left), left + TILE)
+            val py = min(max(st.by[i], top), top + TILE)
+            val dx = st.bx[i] - px
+            val dy = st.by[i] - py
+            val d2 = dx * dx + dy * dy
+            if (d2 >= r * r || d2 < 1e-6f) continue
+            val d = sqrt(d2)
+            st.bx[i] = px + dx / d * r; st.by[i] = py + dy / d * r
+            push(dx / d, dy / d, 0.4f)
+        }
+        val rails = hole.rails
+        for (k in rails.near(floor(st.bx[i] / TILE).toInt(), floor(st.by[i] / TILE).toInt())) {
+            val t = rails.along(k, st.bx[i], st.by[i])
+            val px = rails.x0[k] + (rails.x1[k] - rails.x0[k]) * t
+            val py = rails.y0[k] + (rails.y1[k] - rails.y0[k]) * t
+            val dx = st.bx[i] - px
+            val dy = st.by[i] - py
+            val rr = r + rails.r[k]
+            val d2 = dx * dx + dy * dy
+            if (d2 >= rr * rr || d2 < 1e-6f) continue
+            val d = sqrt(d2)
+            st.bx[i] = px + dx / d * rr; st.by[i] = py + dy / d * rr
+            push(dx / d, dy / d, 0.4f)
+        }
+        fun round(cx: Float, cy: Float, cr: Float) {
+            val dx = st.bx[i] - cx
+            val dy = st.by[i] - cy
+            val rr = r + cr
+            val d2 = dx * dx + dy * dy
+            if (d2 >= rr * rr || d2 < 1e-6f) return
+            val d = sqrt(d2)
+            st.bx[i] = cx + dx / d * rr; st.by[i] = cy + dy / d * rr
+            push(dx / d, dy / d, 0.4f)
+        }
+        var k = 0
+        while (k < hole.posts.size) { round(hole.posts[k], hole.posts[k + 1], Hole.POST_R); k += 2 }
+        k = 0
+        while (k < hole.corals.size) { round(hole.corals[k], hole.corals[k + 1], Hole.CORAL_R); k += 2 }
+        k = 0
+        while (k < hole.buoys.size) { round(hole.buoys[k], hole.buoys[k + 1], Hole.BUOY_R); k += 2 }
+        for (c in hole.crabs.indices) round(st.crabX(c), st.crabY(c), Hole.CRAB_R)
+        round(hole.cupX, hole.cupY, CUP_R + 1f)
+    }
+
+    private fun barrelPair(i: Int, j: Int) {
+        val st = state
+        val dx = st.bx[i] - st.bx[j]
+        val dy = st.by[i] - st.by[j]
+        val rr = 2 * Hole.BARREL_R
+        val d2 = dx * dx + dy * dy
+        if (d2 >= rr * rr || d2 < 1e-6f) return
+        val d = sqrt(d2)
+        val nx = dx / d
+        val ny = dy / d
+        val over = (rr - d) / 2f
+        st.bx[i] += nx * over; st.by[i] += ny * over
+        st.bx[j] -= nx * over; st.by[j] -= ny * over
+        val rel = (st.bvx[i] - st.bvx[j]) * nx + (st.bvy[i] - st.bvy[j]) * ny
+        if (rel < 0f) {
+            val jj = -(1f + 0.5f) * rel / 2f
+            st.bvx[i] += jj * nx; st.bvy[i] += jj * ny
+            st.bvx[j] -= jj * nx; st.bvy[j] -= jj * ny
+        }
+    }
+
+    // ------------------------------------------------------------ between shots
+
+    /**
+     * After a shot comes to rest (not in the cup): the tide and crabs move on. If the tide
+     * covers the ball, it's lifted to the nearest dry spot for free. Returns true if it was moved.
+     */
+    fun endShot(): Boolean {
+        if (inCup) return false
+        state.advance(x, y)
+        val coast = state.coast
+        if (coast.waterDepth(x, y) <= 0f && clearOfBodies(x, y, 0.2f)) return false
+        // Search outward for dry, clear ground.
+        var r = 1f
+        while (r <= 64f) {
+            val steps = (r * 6f).toInt().coerceAtLeast(8)
+            var best = -1f
+            var bx = 0f
+            var by = 0f
+            for (k in 0 until steps) {
+                val a = (2 * Math.PI * k / steps).toFloat()
+                val px = x + cos(a) * r
+                val py = y + sin(a) * r
+                val t = hole.at(px, py)
+                val dry = coast.landDepth(px, py)
+                if (dry >= BALL_R + 1f && !t.solid && !t.isRamp && !t.flows && clearOfPosts(px, py) && dry > best) { best = dry; bx = px; by = py }
+            }
+            if (best > 0f) { placeAt(bx, by); return true }
+            r += 1f
+        }
+        return false
     }
 
     /** Runs the current shot to rest (or the cup). Returns the number of steps taken. */
@@ -451,11 +758,13 @@ class Physics(val hole: Hole) {
     fun copyFrom(o: Physics) {
         x = o.x; y = o.y; vx = o.vx; vy = o.vy; restX = o.restX; restY = o.restY; z = o.z; vz = o.vz
         moving = o.moving; inCup = o.inCup; lipped = false; shotTime = 0f; lastTile = hole.at(x, y)
+        ballStill = o.ballStill; kicks = o.kicks
+        if (state !== o.state) state.copyFrom(o.state)
     }
 
     fun placeAt(px: Float, py: Float) {
         x = px; y = py; restX = px; restY = py; vx = 0f; vy = 0f; moving = false; inCup = false
-        z = 0f; vz = 0f
+        z = 0f; vz = 0f; ballStill = false
     }
 
     companion object {
@@ -500,6 +809,29 @@ class Physics(val hole: Hole) {
         const val HOP_MIN = 40f
         const val WALL_GRIP = 0.94f
         const val MAX_ROLL_S = 18f
+
+        // Later courses.
+        /** A current's drift speed (above [TEETER_SPEED], so a rip really does carry you out) and pull. */
+        const val CURRENT_V = 55f
+        const val CURRENT_K = 2.4f
+        /** Normal speed that smashes a cracked plank, and how much pace the ball keeps through it. */
+        const val PLANK_BREAK = 170f
+        const val PLANK_KEEP = 0.6f
+        /** How much pace a ball keeps rolling into mud. */
+        const val MUD_PLUG = 0.25f
+        const val CORAL_E = 0.5f
+        const val CORAL_H = 6f
+        const val BUOY_E = 0.9f
+        const val BUOY_KICK = 80f
+        const val MAX_KICKS = 6
+        const val BUOY_H = 10f
+        const val CRAB_E = 0.45f
+        const val CRAB_H = 5f
+        /** Barrels: mass against the ball's, bounce, extra rolling resistance, height. */
+        const val BARREL_M = 2.5f
+        const val BARREL_E = 0.5f
+        const val BARREL_C = 60f
+        const val BARREL_H = 7f
 
         /** The softest tap still rolls the ball a few pixels. */
         const val MIN_SPEED = 22f

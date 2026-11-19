@@ -287,5 +287,14 @@ object Holes {
 
     val COVE = Course("cove", "DRIFTWOOD COVE", mood = com.theprobyte.golfalone.render.Mood.DAWN, holes = listOf(COVE_1, COVE_2, COVE_3, COVE_4, COVE_5, COVE_6))
 
+    /** Every course, in the order they open: finish a round of one to open the next. */
+    val COURSES: List<Course> by lazy { listOf(COVE, Saltmarsh.COURSE) }
+
+    fun course(id: String): Course? = COURSES.firstOrNull { it.id == id }
+
+    /** Driftwood Cove's holes (the golden shots are pinned to these). */
     val all: List<Hole> get() = COVE.holes
+
+    /** Every hole of every course. */
+    val everyHole: List<Hole> get() = COURSES.flatMap { it.holes }
 }

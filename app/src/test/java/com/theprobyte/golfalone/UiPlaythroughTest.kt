@@ -121,7 +121,7 @@ class UiPlaythroughTest {
         val planner = ShotPlanner(game.hole)
         var shots = 0
         while (!game.ballInCup && shots < maxShots) {
-            val plan = (1..4).firstNotNullOfOrNull { planner.solveFrom(game.ballX, game.ballY, it) }
+            val plan = (1..4).firstNotNullOfOrNull { planner.solveFrom(game.ballX, game.ballY, it, game.holeStateForTest) }
             assertNotNull("${game.hole.name}: a way to the cup from ${game.ballX},${game.ballY}", plan)
             val s = plan!!.shots.first()
             val before = game.strokesForTest
@@ -218,7 +218,7 @@ class UiPlaythroughTest {
         val planner = ShotPlanner(game.hole)
         var guard = 0
         while (!game.ballInCup && guard++ < 10) {
-            val plan = (1..4).firstNotNullOfOrNull { planner.solveFrom(game.ballX, game.ballY, it) }!!
+            val plan = (1..4).firstNotNullOfOrNull { planner.solveFrom(game.ballX, game.ballY, it, game.holeStateForTest) }!!
             val s = plan.shots.first()
             drag(s.angle, s.power)
             if (plan.shots.size == 1) {
@@ -507,6 +507,25 @@ class UiPlaythroughTest {
         press(GameView.B_PLAY_HOLE)
         assertEquals(3, game.holeIndex)
         assertFalse("no flyover with reduce motion", game.busy)
+
+        // The round opened Saltmarsh Flats: swipe to it on the title and play its first hole,
+        // a tidal one, in practice.
+        press(GameView.B_BACK.takeIf { game.mode == GameView.Mode.SELECT } ?: GameView.B_PAUSE)
+        if (game.isPaused) press(GameView.B_QUIT)
+        assertEquals(GameView.Mode.TITLE, game.mode)
+        swipe(-400f)
+        runUntil(3000) { !game.fading }
+        assertEquals("marsh", game.courseForTest.id)
+        run(300)
+        frame("97-title-saltmarsh")
+        assertReachable(GameView.B_PREV_COURSE, 48f, 0.6f)
+        press(GameView.B_HOLES)
+        press(GameView.B_PLAY_HOLE)
+        assertEquals(GameView.Mode.PLAY, game.mode)
+        runUntil(3000) { !game.busy }
+        frame("98-saltmarsh-tee")
+        playHole("98-saltmarsh")
+        assertTrue(game.ballInCup)
 
         assertTrue("labels that don't fit: ${game.textOverflows}", game.textOverflows.isEmpty())
 

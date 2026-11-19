@@ -22,11 +22,34 @@ import kotlin.math.sqrt
  * drawn over water, and wall faces stay inside their own tiles. The sea's foam and ripples
  * are four transparent overlay frames played on top.
  */
-class Terrain(private val hole: Hole) {
+class Terrain(private val hole: Hole, private val high: Boolean = false) {
 
     val w = hole.pxW
     val h = hole.pxH
     val ground: Bitmap
+    /** On a tidal hole, the same map at high tide (tidal sand under water). */
+    val flooded: Terrain? = if (hole.tidal && !high) Terrain(hole, true) else null
+
+    /** The map for this state of the tide. */
+    fun at(highTide: Boolean): Terrain = if (highTide) flooded ?: this else this
+
+    /**
+     * Warnings drawn over tidal sand: [floodSoon] a wet sheen (it goes under after this shot),
+     * [drainSoon] sand showing through (it comes back after this shot).
+     */
+    val floodSoon: Bitmap? by lazy { if (flooded == null) null else tideMask(Palette.alpha(Palette.SEA[4], 200), 3) }
+    val drainSoon: Bitmap? by lazy { if (flooded == null) null else tideMask(Palette.alpha(Palette.SANDS[3], 170), 4) }
+
+    private fun tideMask(col: Int, every: Int): Bitmap {
+        val dry = hole.coast.land
+        val wet = hole.floodedCoast.land
+        val o = IntArray(w * h)
+        for (y in 0 until h) for (x in 0 until w) {
+            val i = y * w + x
+            if (dry[i] && !wet[i] && (x + 2 * y) % every == 0 && (y % 2 == 0)) o[i] = col
+        }
+        return Pix.bitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(o, 0, w, 0, 0, w, h) }
+    }
     @Volatile private var waterFrames: Array<Bitmap>? = null
 
     /** The sea's moving layer, [FRAMES] frames, built on first use (see [releaseWater]). */
@@ -44,10 +67,10 @@ class Terrain(private val hole: Hole) {
     }
 
     /** Frees the water frames (about 2.5 MB on the longest hole); they rebuild when next needed. */
-    fun releaseWater() { waterFrames = null }
+    fun releaseWater() { waterFrames = null; flooded?.releaseWater() }
 
     /** Builds the water frames now (call off the main thread for the next hole). */
-    fun prepareWater() { water(0) }
+    fun prepareWater() { water(0); flooded?.prepareWater() }
 
     /** Visual land mask per pixel, after smoothing. */
     private val land = BooleanArray(w * h)
@@ -112,7 +135,7 @@ class Terrain(private val hole: Hole) {
     }
 
     private fun computeLand() {
-        System.arraycopy(hole.coast.land, 0, land, 0, land.size)
+        System.arraycopy(hole.coastFor(high).land, 0, land, 0, land.size)
     }
 
     /** Which rail kind covers this pixel, or -1. */
@@ -132,6 +155,8 @@ class Terrain(private val hole: Hole) {
         val sand = blur(3) { it == Tile.SAND }
         val green = blur(3) { it.isGreen }
         val fair = blur(3) { it == Tile.FAIRWAY }
+        val tidal = if (hole.tidal) blur(2) { it == Tile.TIDAL } else null
+        val mud = blur(2) { it == Tile.MUD }
         // Stone: wall tiles (not boulders) plus the rails across diagonal gaps.
         val stoneMask = BooleanArray(w * h)
         val rail = IntArray(w * h) { -1 }
@@ -152,12 +177,18 @@ class Terrain(private val hole: Hole) {
         }
         for (y in 0 until h) for (x in 0 until w) {
             val i = y * w + x
+            val t = hole.tile(x / TILE, y / TILE)
             kind[i] = when {
                 !land[i] -> K_WATER
+                t == Tile.DECK || t == Tile.PLANK -> K_DECK
+                t == Tile.HULL -> K_HULL
+                t.shallow -> K_SHALLOW
                 rail[i] == Rails.WOOD.toInt() -> K_WOOD
                 rail[i] == Rails.BOULDER.toInt() -> K_ROCK
                 rounded[i] -> K_WALL
                 hole.tile(x / TILE, y / TILE).isRamp -> K_RAMP
+                tidal != null && tidal[i] > 0.5f -> K_TIDAL
+                mud[i] > 0.5f -> K_MUD
                 sand[i] > 0.5f -> K_SAND
                 green[i] > 0.5f -> K_GREEN
                 fair[i] > 0.5f -> K_FAIR
@@ -192,7 +223,11 @@ class Terrain(private val hole: Hole) {
             val i = y * w + x
             if (land[i]) continue
             for (k in 1..BANK_H) {
-                if (y - k >= 0 && land[(y - k) * w + x]) { bank[i] = k.toByte(); break }
+                if (y - k >= 0 && land[(y - k) * w + x]) {
+                    val above = kind[(y - k) * w + x]
+                    if (above != K_DECK && above != K_SHALLOW) bank[i] = k.toByte()
+                    break
+                }
             }
         }
     }
@@ -269,15 +304,24 @@ class Terrain(private val hole: Hole) {
             // The bank shades the water at its foot.
             if (y > 0 && bank[i - w] > 0) c = Palette.darker(c)
             else if (y > 1 && bank[i - 2 * w] > 0 && (x + y) % 2 == 0) c = Palette.darker(c)
+            // A boardwalk's edge beam, and its shadow on the water.
+            if (y > 0 && kind[i - w] == K_DECK) return Palette.WOODS[1]
+            if (y > 1 && kind[i - 2 * w] == K_DECK) c = Palette.darker(Palette.darker(c))
+            else if (y > 2 && kind[i - 3 * w] == K_DECK && (x + y) % 2 == 0) c = Palette.darker(c)
             return c
         }
+        if (kd == K_DECK) return deck(x, y)
+        if (kd == K_HULL) return hull(x, y)
+        if (kd == K_SHALLOW) return shallow(x, y, d)
+        if (kd == K_TIDAL) return tidalSand(x, y, d)
+        if (kd == K_MUD) return mudPixel(x, y)
         if (kd == K_WALL) return stone(x, y)
         if (kd == K_WOOD) return wood(x, y)
         if (kd == K_ROCK) return rock(x, y)
         if (kd == K_RAMP) return ramp(x, y)
 
         // Beaches where land meets the sea.
-        if (d < 3.4f + hash(x / 3, y / 3, 3)) return if (d < 1.5f) Palette.SAND_LIGHT else Palette.SAND
+        if (kd != K_MUD && d < 3.4f + hash(x / 3, y / 3, 3)) return if (d < 1.5f) Palette.SAND_LIGHT else Palette.SAND
 
         return when (kd) {
             K_FAIR -> if (ty % 2 == 0) Palette.FAIR_A else Palette.FAIR_B
@@ -307,11 +351,95 @@ class Terrain(private val hole: Hole) {
         }
     }
 
-    /** Ground that decoration may sit on: not walls, logs, boulders or ramps. */
+    /** Ground that decoration may sit on: not walls, logs, boulders, ramps, decks or water over sand. */
     private fun isPlain(i: Int): Boolean {
         if (i < 0 || i >= w * h) return false
         val kd = kind[i]
-        return kd != K_WALL && kd != K_WOOD && kd != K_ROCK && kd != K_RAMP
+        return kd != K_WALL && kd != K_WOOD && kd != K_ROCK && kd != K_RAMP && kd != K_DECK && kd != K_HULL &&
+            kd != K_SHALLOW && kd != K_TIDAL && kd != K_MUD
+    }
+
+    /** Whether a deck tile is part of a run going up and down the map (so its boards lie across). */
+    private fun deckRunsVertically(tx: Int, ty: Int): Boolean {
+        fun d(t: Tile) = t == Tile.DECK || t == Tile.PLANK
+        val v = d(hole.tile(tx, ty - 1)) || d(hole.tile(tx, ty + 1))
+        val hz = d(hole.tile(tx - 1, ty)) || d(hole.tile(tx + 1, ty))
+        return v && !hz || (v && hz && hole.h > hole.w)
+    }
+
+    /** Weathered boards with dark seams, staggered ends and the odd nail. */
+    private fun deck(x: Int, y: Int): Int {
+        val tx = x / TILE
+        val ty = y / TILE
+        val vertical = deckRunsVertically(tx, ty)
+        val across = if (vertical) y else x // boards are 3 px wide, laid across the run
+        val along = if (vertical) x else y
+        val board = across / 3
+        val seam = across % 3 == 2
+        val end = (along + (hash(board, 0, 61) * 16).toInt()) % 16 == 0
+        var c = when {
+            seam || end -> Palette.WOODS[1]
+            hash(board, along / 5, 62) < 0.25f -> Palette.WOODS[2]
+            else -> Palette.WOODS[3]
+        }
+        if (!seam && !end && across % 3 == 0 && hash(x, y, 63) < 0.08f) c = Palette.WOODS[4]
+        if (!seam && (along % 16 == 2) && across % 3 == 1) c = Palette.WOODS[0] // nails
+        // The boardwalk's outer edge.
+        val edgeTile = if (vertical) (x % TILE == 0 && !isDeck(tx - 1, ty)) || (x % TILE == TILE - 1 && !isDeck(tx + 1, ty))
+            else (y % TILE == 0 && !isDeck(tx, ty - 1)) || (y % TILE == TILE - 1 && !isDeck(tx, ty + 1))
+        return if (edgeTile) Palette.WOODS[2] else c
+    }
+
+    private fun isDeck(tx: Int, ty: Int): Boolean { val t = hole.tile(tx, ty); return t == Tile.DECK || t == Tile.PLANK }
+
+    /** A wreck's dark timbers: a 3/4 wall with a lit top and planked front. */
+    private fun hull(x: Int, y: Int): Int {
+        val tx = x / TILE
+        val ty = y / TILE
+        val v = y % TILE
+        val openBelow = hole.tile(tx, ty + 1) != Tile.HULL
+        if (openBelow && v >= FACE_TOP) {
+            if (v == TILE - 1) return Palette.WOODS[0]
+            return if ((x + (v - FACE_TOP) * 3) % 9 == 0) Palette.WOODS[0] else Palette.WOODS[1]
+        }
+        val openAbove = hole.tile(tx, ty - 1) != Tile.HULL
+        if (openAbove && v == 0) return Palette.WOODS[3]
+        return if (x % 4 == 0) Palette.WOODS[1] else Palette.WOODS[2]
+    }
+
+    /** Clear water over sand: sand showing through, a brighter rim at the drop-off. */
+    private fun shallow(x: Int, y: Int, d: Float): Int {
+        if (d < 1.2f) return Palette.SEA[5]
+        if (d < 2.4f && (x + y) % 2 == 0) return Palette.SEA[5]
+        val sandy = Palette.lerp(Palette.SANDS[3], Palette.SEA[4], 0.55f)
+        return if (hash(x / 4, y / 3, 64) < 0.18f) Palette.lerp(Palette.SANDS[4], Palette.SEA[4], 0.45f) else sandy
+    }
+
+    /** Firm, wet tidal sand: darker and cooler than the beach, with long ripples and the odd puddle. */
+    private fun tidalSand(x: Int, y: Int, d: Float): Int {
+        if (d < 1.2f) return Palette.SANDS[3]
+        // Puddles: small ovals on a coarse grid, lit along their top edge.
+        val cx = x / 6
+        val cy = y / 5
+        if (hash(cx, cy, 66) < 0.08f) {
+            val ox = cx * 6 + 3
+            val oy = cy * 5 + 2
+            val dx = x - ox
+            val dy = y - oy
+            if (dx * dx + dy * dy * 4 <= 5) return if (dy < 0) Palette.SEA[5] else Palette.SEA[4]
+        }
+        val ripple = (2 * y + (kotlin.math.sin(x * 0.45f + y / 6) * 2f).toInt()) % 7 == 0
+        return if (ripple) Palette.SANDS[1] else Palette.SANDS[2]
+    }
+
+    /** Glossy dark mud with wet highlights. */
+    private fun mudPixel(x: Int, y: Int): Int {
+        val blob = hash(x / 3, y / 3, 67)
+        return when {
+            blob < 0.12f && (x + y) % 2 == 0 -> Palette.SANDS[2]
+            blob > 0.7f -> Palette.SANDS[0]
+            else -> Palette.SANDS[1]
+        }
     }
 
     /** Clusters on a jittered grid: tufts and flowers in the rough, daisies, shells and pebbles. */
@@ -442,7 +570,7 @@ class Terrain(private val hole: Hole) {
     private fun castShadows(px: IntArray) {
         fun solid(x: Int, y: Int): Boolean {
             val kd = k(x, y)
-            return kd == K_WALL || kd == K_WOOD || kd == K_ROCK
+            return kd == K_WALL || kd == K_WOOD || kd == K_ROCK || kd == K_HULL
         }
         for (y in 0 until h) for (x in 0 until w) {
             val i = y * w + x
@@ -575,7 +703,7 @@ class Terrain(private val hole: Hole) {
         if (land[i]) {
             // Wet sand where the wash just pulled back (not on a cliff top above a bank).
             val cliff = y + 1 < h && bank[i + w] > 0
-            val beach = kind[i] != K_WALL && kind[i] != K_WOOD
+            val beach = kind[i] != K_WALL && kind[i] != K_WOOD && kind[i] != K_DECK && kind[i] != K_HULL && kind[i] != K_SHALLOW
             return if (beach && !cliff && d < 0.8f + 1.6f * (1f - phase)) Palette.alpha(Palette.SANDS[2], 150) else 0
         }
         if (bank[i] > 0) return 0
@@ -742,6 +870,11 @@ class Terrain(private val hole: Hole) {
         private const val K_WOOD: Byte = 6
         private const val K_ROCK: Byte = 7
         private const val K_RAMP: Byte = 8
+        private const val K_TIDAL: Byte = 9
+        private const val K_MUD: Byte = 10
+        private const val K_DECK: Byte = 11
+        private const val K_HULL: Byte = 12
+        private const val K_SHALLOW: Byte = 13
 
         private val BAYER = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
         fun bayer(x: Int, y: Int): Int = BAYER[(y and 3) * 4 + (x and 3)]

@@ -8,10 +8,21 @@ import android.content.Context
  * Course records are keyed by course id ([course]), so a second course never collides
  * with the first. Saves from before course ids are migrated once.
  */
-class Progress(context: Context, private val course: String = "cove") {
+class Progress(context: Context, course: String = "cove") {
     private val prefs = context.getSharedPreferences("golf", Context.MODE_PRIVATE)
 
+    /** The course whose bests and round are read and written (switch it with the course). */
+    var course: String = course
+
     init { migrate() }
+
+    /** Fewest strokes for a full round of course [id], or 0. */
+    fun courseBestOf(id: String): Int = prefs.getInt("course_$id", 0)
+
+    /** The course last chosen on the title screen. */
+    var lastCourse: String
+        get() = prefs.getString("last_course", "cove") ?: "cove"
+        set(v) = prefs.edit().putString("last_course", v).apply()
 
     /** Version 1 keyed everything by hole number alone (all of it Driftwood Cove); copy it to the cove's keys once. */
     private fun migrate() {
@@ -78,12 +89,16 @@ class Progress(context: Context, private val course: String = "cove") {
     val runBallX: Float get() = prefs.getFloat(runKey("ball_x"), 0f)
     val runBallY: Float get() = prefs.getFloat(runKey("ball_y"), 0f)
 
-    fun saveRun(hole: Int, scores: IntArray, strokes: Int = 0, ballX: Float = 0f, ballY: Float = 0f) =
+    /** The hole's own state when it was left (tide, crabs, planks, barrels; see HoleState.encode). */
+    val runState: String get() = prefs.getString(runKey("state"), "") ?: ""
+
+    fun saveRun(hole: Int, scores: IntArray, strokes: Int = 0, ballX: Float = 0f, ballY: Float = 0f, state: String = "") =
         prefs.edit().putInt(runKey("hole"), hole).putString(runKey("scores"), scores.joinToString(","))
-            .putInt(runKey("strokes"), strokes).putFloat(runKey("ball_x"), ballX).putFloat(runKey("ball_y"), ballY).apply()
+            .putInt(runKey("strokes"), strokes).putFloat(runKey("ball_x"), ballX).putFloat(runKey("ball_y"), ballY)
+            .putString(runKey("state"), state).apply()
 
     fun clearRun() = prefs.edit().remove(runKey("hole")).remove(runKey("scores")).remove(runKey("strokes"))
-        .remove(runKey("ball_x")).remove(runKey("ball_y")).apply()
+        .remove(runKey("ball_x")).remove(runKey("ball_y")).remove(runKey("state")).apply()
 
     // ------------------------------------------------------------ stats (kept from this version on)
 

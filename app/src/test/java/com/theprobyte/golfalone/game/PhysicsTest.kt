@@ -89,7 +89,7 @@ class PhysicsTest {
     @Test fun ballsStoppingOnDrawnSandOverWaterTilesSettleQuickly() {
         // Drawn sand reaches a little past the tile edge; a ball resting there must stop, not
         // sit "moving" until the 18 s roll limit.
-        for (hole in Holes.all) {
+        for (hole in Holes.everyHole) {
             val coast = hole.coast
             var tested = 0
             for (py in 0 until hole.pxH step 3) for (px in 0 until hole.pxW step 3) {
@@ -451,7 +451,7 @@ class PhysicsTest {
     /** Random shots everywhere: the ball always ends grounded, outside every solid, out of deep water, in time. */
     @Test fun invariantsHoldForRandomShots() {
         val rnd = java.util.Random(42)
-        for (hole in Holes.all + rampPond) {
+        for (hole in Holes.everyHole + rampPond) {
             val p = Physics(hole)
             repeat(120) {
                 p.placeAt(hole.teeX, hole.teeY)

@@ -19,8 +19,11 @@ object Noise {
  *
  * Physics uses this, not the tile grid, to decide when the ball is in the water. That means
  * what you see is what counts: a ball touching the drawn foam line is still on the beach.
+ *
+ * With [flooded], tidal sand counts as water (high tide). Decks and boardwalks keep their
+ * straight edges: they're laid over the water exactly on their tiles, not blurred.
  */
-class Coast(private val hole: Hole) {
+class Coast(private val hole: Hole, flooded: Boolean = false) {
     val w = hole.pxW
     val h = hole.pxH
 
@@ -40,7 +43,8 @@ class Coast(private val hole: Hole) {
             for (x in 1 until iw) {
                 val tx = Math.floorDiv(x - 1 - r, TILE)
                 val ty = Math.floorDiv(y - 1 - r, TILE)
-                if (!hole.tile(tx, ty).water) row++
+                val t = hole.tile(tx, ty)
+                if (!t.water && !(flooded && t == Tile.TIDAL)) row++
                 sum[y * iw + x] = sum[(y - 1) * iw + x] + row
             }
         }
@@ -51,7 +55,8 @@ class Coast(private val hole: Hole) {
             val x1 = x + 2 * r + 1
             val y1 = y + 2 * r + 1
             val v = (sum[y1 * iw + x1] - sum[y0 * iw + x1] - sum[y1 * iw + x0] + sum[y0 * iw + x0]) / area
-            land[y * w + x] = v + (Noise.hash(x / 2, y / 2, 9) - 0.5f) * 0.14f > 0.5f
+            land[y * w + x] = v + (Noise.hash(x / 2, y / 2, 9) - 0.5f) * 0.14f > 0.5f ||
+                hole.tile(x / TILE, y / TILE) == Tile.DECK
         }
         val toWater = chamfer { !land[it] }
         val toLand = chamfer { land[it] }

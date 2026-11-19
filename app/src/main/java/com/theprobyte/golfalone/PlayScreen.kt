@@ -1,5 +1,7 @@
 package com.theprobyte.golfalone
 
+import com.theprobyte.golfalone.game.Tide
+import com.theprobyte.golfalone.GameView.Companion.HUD_H
 import android.graphics.Canvas
 import com.theprobyte.golfalone.GameView.Companion.B_PAUSE
 import com.theprobyte.golfalone.GameView.Companion.CHIP
@@ -43,7 +45,30 @@ internal fun GameView.drawHud(c: Canvas) {
     }
 }
 
+/**
+ * The tide gauge, under the top strip on tidal holes: six steps, sand-coloured while the
+ * tide is out and sea-coloured while it's in, with the next shot's step outlined.
+ */
+internal fun GameView.drawTideGauge(c: Canvas) {
+    if (!hole.tidal) return
+    val y = insetTop + HUD_H + 2
+    val x = 3
+    rect(c, x, y, 47, 10, Palette.alpha(Palette.INK_SHADOW, 170))
+    PixelFont.draw(c, "TIDE", x + 3, y + 3, Palette.INK, 1, 0, Face.SMALL)
+    val p = holeState.tidePhase
+    for (k in 0 until Tide.PERIOD) {
+        val px = x + 22 + k * 4
+        val high = k >= Tide.PERIOD / 2
+        val col = if (high) Palette.SEA[3] else Palette.SANDS[3]
+        if (k == p) {
+            rect(c, px - 1, y + 1, 5, 8, Palette.INK)
+            rect(c, px, y + 2, 3, 6, col)
+        } else rect(c, px, y + 3, 3, 4, Palette.alpha(col, 200))
+    }
+}
+
 internal fun GameView.drawPlayUi(c: Canvas) {
+    drawTideGauge(c)
     // Hole banner while the round begins.
     if (holeT < 2.6f && strokes == 0) {
         val a = when {

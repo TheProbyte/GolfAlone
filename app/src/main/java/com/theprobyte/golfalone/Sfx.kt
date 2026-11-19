@@ -125,6 +125,35 @@ class Sfx(context: Context) {
 
     fun tap() = play { it.click(0.5f) }
 
+    /** The tide turning: a long wash in (rising) or out (falling). */
+    fun tide(rising: Boolean) = play {
+        if (rising) it.sweep(0.3f, 0f, 1400f, 300f, 900f, q = 0.7f) else it.sweep(0.25f, 0f, 1400f, 900f, 300f, q = 0.7f)
+    }
+
+    /** A bumper buoy's bell. */
+    fun bell(pan: Float) = play {
+        it.glass(Synth.midiToHz(84f), 0.5f, pan)
+        it.tok(420f, 0.35f, pan)
+    }
+
+    /** A cracked plank giving way. */
+    fun crack(pan: Float) = play {
+        it.tok(180f, 0.7f, pan)
+        it.click(0.8f, pan)
+        it.sweep(0.35f, pan, 220f, 2600f, 600f, q = 1.1f)
+        it.tok(120f, 0.4f, pan, delayMs = 40f)
+    }
+
+    /** Knocking a barrel: a hollow, low thunk. */
+    fun barrel(impact: Float, pan: Float) = play {
+        val v = (impact / 250f).coerceIn(0.12f, 1f)
+        it.tok(110f + impact * 0.15f, v, pan)
+        it.tok(220f, v * 0.3f, pan, delayMs = 12f)
+    }
+
+    /** A crab's scuttle. */
+    fun scuttle(pan: Float) = play { it.click(0.25f, pan); it.click(0.2f, pan) }
+
     /** The result word landing on the card: a low, papery thump. */
     fun stamp() = play {
         it.tok(115f, 0.6f, 0f)

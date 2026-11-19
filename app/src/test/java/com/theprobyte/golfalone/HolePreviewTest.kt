@@ -19,7 +19,7 @@ import java.io.FileOutputStream
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class HolePreviewTest {
     @Test fun renderAllHoles() {
-        for (hole in Holes.all) {
+        for (hole in Holes.everyHole) {
             // What's drawn as land is exactly what physics treats as land.
             val (land, _, _) = Terrain(hole).masks()
             org.junit.Assert.assertTrue("${hole.name}: drawn coast = physics coast", land.contentEquals(hole.coast.land))
@@ -30,15 +30,22 @@ class HolePreviewTest {
         }
         val dir = System.getProperty("golfalone.shots")?.let { File(it, "holes").apply { mkdirs() } } ?: return
         val scale = 3
-        Holes.all.forEachIndexed { i, hole ->
-            val t = Terrain(hole)
-            val b = Bitmap.createBitmap(t.w * scale, t.h * scale, Bitmap.Config.ARGB_8888)
-            val c = Canvas(b)
-            c.scale(scale.toFloat(), scale.toFloat())
-            val p = Paint().apply { isFilterBitmap = false }
-            c.drawBitmap(t.ground, 0f, 0f, p)
-            c.drawBitmap(t.water(0), 0f, 0f, p)
-            FileOutputStream(File(dir, "hole-${i + 1}.png")).use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        for (course in Holes.COURSES) {
+            com.theprobyte.golfalone.render.Palette.setMood(course.mood)
+            course.holes.forEachIndexed { i, hole ->
+                val base = Terrain(hole)
+                for (t in listOfNotNull(base, base.flooded)) {
+                    val b = Bitmap.createBitmap(t.w * scale, t.h * scale, Bitmap.Config.ARGB_8888)
+                    val c = Canvas(b)
+                    c.scale(scale.toFloat(), scale.toFloat())
+                    val p = Paint().apply { isFilterBitmap = false }
+                    c.drawBitmap(t.ground, 0f, 0f, p)
+                    c.drawBitmap(t.water(0), 0f, 0f, p)
+                    val tag = if (t === base) "" else "-high"
+                    FileOutputStream(File(dir, "${course.id}-${i + 1}$tag.png")).use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                }
+            }
         }
+        com.theprobyte.golfalone.render.Palette.setMood(com.theprobyte.golfalone.render.Mood.DAY)
     }
 }
