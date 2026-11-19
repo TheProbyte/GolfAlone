@@ -1,6 +1,8 @@
 # Golf Alone: the next nine courses
 
-> **Status:** plan only. Driftwood Cove is course 1. This plans courses 2–10.
+> **Status:** courses 2–5 are **built** (Saltmarsh Flats, Lighthouse Point, Glass Lagoon, Wreck
+> Bay), with course select, per-shot hole state, and their moods, life and sounds. Courses 6–10
+> are still a plan. Pars below are what was built (the bot's best without tricks, plus one).
 > **Decision:** no loft shot. Golf Alone stays a rolling, putting game. Every mechanic
 > below works on a ball that rolls (and hops off ramps or vents), never one you chip.
 
@@ -23,14 +25,16 @@ These are the rules that made the water fair, applied to everything new:
 
 1. **Nothing is random.** Anything that changes does so once per stroke, or replays exactly
    the same way every shot. The same shot always gives the same result.
-2. **You can read it before you shoot.** Anything that will change shows its next state:
-   tide ghosts, crab footprints, cracks in the ice. Holding still shows it, like the peek.
+2. **You can read it before you shoot.** Anything that will change shows its next state,
+   always on screen: a tide gauge, a wet sheen on sand that floods after this shot, crab
+   footprints on their next tile, cracks in the ice. (Holding still stays the peek.)
 3. **New hazards work like the water:**
    - you're only in once the whole ball is in
    - a slow ball teeters on the edge
    - the drop is near where you went in
-4. **The bot proves par on every hole**, including the holes where things change per stroke
-   (the planner tracks that state). It also proves every course is beatable without the tricks.
+4. **The bot proves par on every hole**, including the holes where things change per shot
+   (the planner tracks that state and counts splash penalties). On tidal holes it also proves
+   par with the tide always in, and a fuzz test checks no barrel can ever lock a hole.
 5. **The first hole of each course teaches its new thing** with nothing else in the way.
 
 ---
@@ -48,12 +52,15 @@ distant gulls, and the slosh of water as the tide turns.
 
 | # | Hole | Size | Par | Idea |
 |---|---|---|---|---|
-| 1 | Low Water | S | 3 | A sandbar shortcut that's open now and floods in three strokes. |
-| 2 | The Boardwalk | M | 3 | A long plank bridge over a creek. Straight and gentle wins. |
-| 3 | Mudflat | S | 2 | A ring of mud round the green: only a soft putt holds. |
-| 4 | Creek Bends | L | 5 | A winding creek. Which bends are dry depends on the tide, so lay up and wait. |
-| 5 | Heron's Rest | M | 4 | Two islands and a causeway between them that floods at high tide. |
-| 6 | Spring Tide | L | 4 | The signature hole: a birdie only if you cross the flats at low tide. |
+| 1 | Low Water | S | 3 | A dry loop round the creek, or straight up the flats while the tide's out. |
+| 2 | The Boardwalk | M | 4 | A walk over the creek that turns at a platform: two clean putts along the planks. |
+| 3 | Mudflat | S | 3 | The cup in a ring of mud, open on the far side: only a soft putt holds. |
+| 4 | Creek Bends | L | 4 | A snaking creek; while the tide's out the flats cut its bends. |
+| 5 | Heron's Rest | M | 4 | Two islands: the causeway at low tide, or the long boardwalk round. |
+| 6 | Spring Tide | L | 5 | A bay of flats: cross it while the tide's out, or walk the shore. |
+
+Built as planned, par 23. Mud plugs a ball that rolls into it. A ball the tide covers is lifted
+to the nearest dry spot for free.
 
 ## Course 3: Lighthouse Point (night)
 
@@ -70,12 +77,15 @@ foghorn, and the buoys' bells.
 
 | # | Hole | Size | Par | Idea |
 |---|---|---|---|---|
-| 1 | Harbour Lights | S | 2 | One buoy guards the cup: bank off it. |
-| 2 | Crab Walk | M | 3 | A crab patrols the gap. Shoot when it has stepped aside. |
-| 3 | The Spiral | M | 4 | A path spiralling round the base of the lighthouse. |
-| 4 | Buoy Field | S | 3 | A cluster of buoys: chaos, or one clean line through. |
-| 5 | Keeper's Garden | M | 3 | A walled garden with two crabs and lantern-lit gaps. |
-| 6 | Long Night | L | 5 | The whole headland: buoys, crabs and rocks. |
+| 1 | Harbour Lights | S | 3 | A low wall shields the cup: bank off the buoy round its end. |
+| 2 | Crab Walk | M | 3 | A gap to the west of the rocks, with a crab patrolling it. |
+| 3 | The Spiral | M | 5 | Rings of wall round the lighthouse, their gaps on alternate sides. |
+| 4 | Buoy Field | S | 3 | A field of bumper buoys: chaos, or one clean line through. |
+| 5 | Keeper's Garden | M | 4 | A walled garden: in by the south gate past one crab, or the east gate past another. |
+| 6 | Long Night | L | 4 | The whole headland: buoys, a crab and rocks, up to the lighthouse. |
+
+Built, par 22. Buoys kick the ball off faster than it came, up to six times a shot. The night is
+a moonlit palette, only as dark as the contrast rule allows; lanterns and the beam add the rest.
 
 ## Course 4: Glass Lagoon (tropical noon)
 
@@ -91,11 +101,13 @@ foghorn, and the buoys' bells.
 | # | Hole | Size | Par | Idea |
 |---|---|---|---|---|
 | 1 | Wade In | S | 3 | A shortcut through the shallows that costs speed, not a stroke. |
-| 2 | Lazy River | M | 3 | A current that carries the ball round to the green if you start it right. |
-| 3 | Coral Gardens | M | 4 | Coral heads to thread in the shallows. |
-| 4 | The Rip | S | 2 | A current running out to sea. Cross it fast or be dragged into deep water. |
-| 5 | Turtle Beach | L | 5 | A long sandbar through the lagoon, with currents running both ways. |
-| 6 | The Blue Hole | M | 4 | A ring of reef round a deep hole, with an island green reached by current. |
+| 2 | Lazy River | M | 3 | A current that carries the ball round to the green, if you start it right. |
+| 3 | Coral Gardens | M | 3 | Coral heads to thread in the shallows, round an island green. |
+| 4 | The Rip | S | 3 | A current running out to sea across the fairway: cross it fast. |
+| 5 | Turtle Beach | L | 4 | A long sandbar, with a current either side running opposite ways. |
+| 6 | The Blue Hole | M | 3 | A ring of reef round a deep hole; a current carries you to the island green. |
+
+Built, par 19. Currents drift faster than the teeter speed, so a rip really does carry you out.
 
 ## Course 5: Wreck Bay (storm)
 
@@ -113,12 +125,14 @@ wood and distant thunder.
 
 | # | Hole | Size | Par | Idea |
 |---|---|---|---|---|
-| 1 | Washed Up | S | 3 | One cracked plank between you and the cup: smash it, or go round. |
-| 2 | Barrel Run | M | 3 | A barrel sits in the narrow way. Knock it clear, or use it as a backstop. |
-| 3 | The Hold | M | 4 | Inside the hull: deck corridors with planks to break. |
-| 4 | Gangplank | S | 2 | A single plank out to a green on the rocks. |
-| 5 | Mast Fall | L | 5 | The fallen mast lies across the beach as a long rail to ride. |
-| 6 | Storm Surge | L | 4 | Everything at once: barrels, planks and a wrecked bow. |
+| 1 | Washed Up | S | 3 | A fence of cracked planks: smash through, or go round the end. |
+| 2 | Barrel Run | M | 3 | Two barrels in a corridor of hull timbers. |
+| 3 | The Hold | M | 4 | Inside the wreck: zigzag between bulkheads; one door is cracked planks. |
+| 4 | Gangplank | S | 3 | A single plank out to a green on the rocks. |
+| 5 | Mast Fall | L | 4 | The fallen mast across the beach, a long rail to bank along, with barrels about. |
+| 6 | Storm Surge | L | 4 | A wreck on the beach: round it either side, or smash through bow and bulkhead. |
+
+Built, par 21. Barrels never come to rest in the cup, and sink in the sea.
 
 ## Course 6: Ember Isle (volcanic dusk)
 
@@ -231,7 +245,7 @@ When the ball drops, the cup pops it out and the camera glides to the next tee.
 | F0.1 | **Course select:** the title shows the current course's card in its own colours. Swipe or use the arrows to change course. A locked course says what opens it. | Ten courses need a way in. |
 | F0.2 | **Per-stroke hole state:** tide level, crab positions, smashed planks, barrel positions, cracked ice and open gates, advanced once per stroke. Physics reads it, saves keep it, and the planner searches through it. | It covers rule 1 and rule 4 for every course at once. |
 | F0.3 | **Moving bodies:** kinematic ones (crabs, windmill blades) and pushable ones (barrels) in the physics. | Courses 3, 5 and 9. |
-| F0.4 | **The preview:** holding still shows anything that will change on your next stroke as a ghost. | Rule 2. |
+| F0.4 | **The preview (built differently):** always-on signs instead of a hold-to-preview: the tide gauge, a wet sheen on sand about to flood, crab footprints. | Rule 2. |
 | F0.5 | **New moods:** golden, night, noon, storm, dusk and cold, each passing the contrast test. | One per course. |
 | F0.6 | **Per-course life and sound:** ambient creatures and a sound bed for each course. | |
 | F0.7 | **The Book per course:** stats and postcards with a tab for each course. | |

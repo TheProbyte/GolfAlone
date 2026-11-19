@@ -5,7 +5,8 @@ to shoot, and play a quiet island course alone.
 
 ![Screenshots](docs/screenshots.png)
 
-**Status:** Driftwood Cove, a full 6-hole course (par 21). See [the plan](docs/PLAN.md) and
+**Status:** five courses, 30 holes: Driftwood Cove, Saltmarsh Flats, Lighthouse Point, Glass
+Lagoon and Wreck Bay. Finish a round of one to open the next. See [the course plan](docs/COURSES_PLAN.md). See [the plan](docs/PLAN.md) and
 [the visuals, UI and course plan](docs/POLISH_AND_COURSE_PLAN.md).
 
 ## What's in
@@ -16,6 +17,13 @@ to shoot, and play a quiet island course alone.
   - **Tide Pools:** a long par 5 that scrolls, ending in an island green.
   - **Palm Grove:** palm trunks to thread through.
   - **The Saddle:** a ridge green with slopes falling away.
+- **Four more courses**, each with its own time of day, life and sound:
+  - **Saltmarsh Flats** (golden hour): the tide moves one step per shot, so tidal sand is a
+    shortcut for three shots and sea for three. Mud and boardwalks.
+  - **Lighthouse Point** (night): bumper buoys, and hermit crabs that step along their patrol
+    after every shot (footprints show where next).
+  - **Glass Lagoon** (noon): shallows you can roll through, currents that carry you, coral.
+  - **Wreck Bay** (storm): cracked planks to smash open, barrels to knock about, rain.
 - **Play modes:** play the full course, with a running score against par and a scorecard at the
   end, or practise any hole you've unlocked.
 - **Forgiving water:** splashes follow the drawn coastline, and only once the whole ball is in.
