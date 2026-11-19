@@ -78,10 +78,25 @@ object Sprites {
         }
     }
 
+    private const val CANOPY_OX = 8
+    private const val CANOPY_OY = 6
+
+    /** The canopy pre-drawn once; [sway] only shifts it, so one bitmap serves every palm. */
+    private val canopy: Bitmap by lazy {
+        val b = Bitmap.createBitmap(17, 15, Bitmap.Config.ARGB_8888)
+        drawCanopy(Canvas(b), CANOPY_OX, CANOPY_OY)
+        b
+    }
+    private val blit = android.graphics.Paint().apply { isFilterBitmap = false; isAntiAlias = false }
+
     /** The canopy, drawn over the ball. [sway] shifts it by a pixel in the breeze. */
     fun palmCanopy(c: Canvas, bx: Int, by: Int, sway: Int) {
         val tx = bx + CANOPY_DX + sway
         val ty = by + CANOPY_DY
+        c.drawBitmap(canopy, (tx - CANOPY_OX).toFloat(), (ty - CANOPY_OY).toFloat(), blit)
+    }
+
+    private fun drawCanopy(c: Canvas, tx: Int, ty: Int) {
         for (f in frondDx.indices) {
             val dx = frondDx[f]
             val dy = frondDy[f]

@@ -48,16 +48,17 @@ six hand-made holes.
 ## M. Maps: Driftwood Cove (6 holes, rolling only)
 
 Every hole is checked by `HoleCompletableTest`: the planner bot must finish it at par or
-better with the real physics. The planner is a perfect shot-maker, so par is usually set at
-the planner's best score plus one.
+better with the real physics. The planner is a perfect shot-maker, so par is set at the
+planner's best score plus one. Long holes get more slack, because the bot can hole out from
+range in a way no person reliably can. No human has tested the difficulty yet.
 
 | Hole | Name | Par | The idea | New element |
 |---|---|---|---|---|
 | 1 | **First Light** | 3 | Round the rocks and the tide pool, up to a walled green. | (the current hole) |
 | 2 | **The Spit** | 3 | A long, thin finger of land between two seas. Thread the narrow neck, or lay up short of it. | Precision |
 | 3 | **Driftwood** | 3 | A bowl ringed with driftwood. The direct line is blocked, so bank shots get you there. | Bouncy driftwood logs (`w`) |
-| 4 | **Tide Pools** | 4 | A long hole that scrolls, past a string of pools, onto an island green reached by a narrow causeway. | Scrolling hole, look-at-green |
-| 5 | **Palm Grove** | 4 | A dogleg through a grove of palms. Thread the trunks, or go round them. | Palm trunks (`P`) as round posts |
+| 4 | **Tide Pools** | 5 | A long hole (62 rows) that scrolls, past three pools, onto an island green reached by a 3-tile causeway. The bot's best is 4. | Scrolling hole, flyover, look-at-green |
+| 5 | **Palm Grove** | 4 | A dogleg through a grove of palms. Thread the trunks, or go round them. The bot's best is 2, by holing a long second shot, so par 4 is generous on purpose. | Palm trunks (`P`) as round posts |
 | 6 | **The Saddle** | 3 | A green on a ridge, with slopes falling away on both sides. Speed matters more than line. | Big slopes |
 
 Saltmarsh (the tide, E2) and Lighthouse Point (loft, E1) follow as in [PLAN.md](PLAN.md),

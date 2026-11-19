@@ -19,6 +19,12 @@ import java.io.FileOutputStream
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class HolePreviewTest {
     @Test fun renderAllHoles() {
+        for (hole in Holes.all) {
+            val m = Terrain(hole).coastMismatch()
+            println("${hole.name}: coast drawn as land on water up to ${m[0]} px, as water on land up to ${m[1]} px")
+            // The ball is 4 px across: keep the drawn coast within 3 px of the physics.
+            org.junit.Assert.assertTrue("${hole.name} coast strays ${m.toList()}", m[0] <= 3f && m[1] <= 3f)
+        }
         val dir = System.getProperty("golfalone.shots")?.let { File(it, "holes").apply { mkdirs() } } ?: return
         val scale = 3
         Holes.all.forEachIndexed { i, hole ->

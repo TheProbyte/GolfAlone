@@ -131,6 +131,17 @@ class UiPlaythroughTest {
         assertEquals(GameView.Mode.TITLE, game.mode)
         frame("00-title")
 
+        // A new player's hole select: only hole 1 is open.
+        press(GameView.B_HOLES)
+        assertEquals(GameView.Mode.SELECT, game.mode)
+        run(300)
+        frame("01-select-locked")
+        press(GameView.B_HOLE0 + 2)
+        assertEquals(GameView.Mode.SELECT, game.mode)
+        assertEquals("FINISH HOLE 2 TO UNLOCK", game.messageForTest)
+        press(GameView.B_BACK)
+        assertEquals(GameView.Mode.TITLE, game.mode)
+
         press(GameView.B_PLAY)
         assertEquals(GameView.Mode.PLAY, game.mode)
         assertTrue(game.courseRun)
@@ -155,6 +166,10 @@ class UiPlaythroughTest {
             assertEquals(GameView.Mode.CARD, game.mode)
             run(400)
             frame("h${i + 1}-3-card")
+            if (i == 0) { // Back on a card doesn't throw the round away.
+                assertTrue(game.onBack())
+                assertEquals(GameView.Mode.CARD, game.mode)
+            }
             println("${game.hole.name}: ${game.strokesForTest} (par ${game.hole.par})")
             press(GameView.B_NEXT)
         }

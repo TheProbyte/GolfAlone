@@ -131,7 +131,12 @@ class Terrain(private val hole: Hole) {
         }
 
         var c = when {
-            t == Tile.FAIRWAY -> if (n < 0.05f) Palette.FAIR_DOT else if (ty % 2 == 0) Palette.FAIR_A else Palette.FAIR_B
+            t == Tile.FAIRWAY -> when {
+                hash(x / 2, y / 2, 33) < 0.004f && (x + y) % 2 == 0 -> Palette.FLOWER_W // a daisy
+                n < 0.05f -> Palette.FAIR_DOT
+                ty % 2 == 0 -> Palette.FAIR_A
+                else -> Palette.FAIR_B
+            }
             t == Tile.ROUGH -> {
                 val f = hash(x / 2, y / 2, 31)
                 when {
@@ -260,6 +265,34 @@ class Terrain(private val hole: Hole) {
         // Glints on open water.
         if (d > 6f && hash(x / 2, y, 100 + f) < 0.006f) return Palette.alpha(Palette.SPARKLE, 200)
         return 0
+    }
+
+    /**
+     * How far the drawn coastline strays from the physics tiles: the deepest pixel (px from
+     * the nearest tile of the drawn kind) drawn as land on a water tile, and as water on a
+     * land tile.
+     */
+    fun coastMismatch(): FloatArray {
+        val out = FloatArray(2)
+        for (y in 0 until h) for (x in 0 until w) {
+            val tx = x / TILE
+            val ty = y / TILE
+            val tileLand = !hole.tile(tx, ty).water
+            val drawnLand = land[y * w + x]
+            if (tileLand == drawnLand) continue
+            var best = 99f
+            for (dy in -1..1) for (dx in -1..1) {
+                if (!hole.tile(tx + dx, ty + dy).water != drawnLand) continue
+                val l = (tx + dx) * TILE.toFloat()
+                val t = (ty + dy) * TILE.toFloat()
+                val ex = maxOf(l - (x + 0.5f), 0f, (x + 0.5f) - (l + TILE))
+                val ey = maxOf(t - (y + 0.5f), 0f, (y + 0.5f) - (t + TILE))
+                best = minOf(best, kotlin.math.sqrt(ex * ex + ey * ey))
+            }
+            val k = if (drawnLand) 0 else 1
+            out[k] = maxOf(out[k], best)
+        }
+        return out
     }
 
     /** A small nearest-sampled copy of the ground for hole cards: every [step]th pixel. */

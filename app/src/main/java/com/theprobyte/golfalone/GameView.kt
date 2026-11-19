@@ -318,7 +318,7 @@ class GameView(
             Mode.TITLE -> return false
             Mode.PLAY -> { paused = !paused; aiming = false; sfx.tap() }
             Mode.SELECT -> toTitle()
-            Mode.CARD -> if (courseRun) toTitle() else toSelect()
+            Mode.CARD -> if (courseRun) sayUi("TAP NEXT HOLE TO CARRY ON") else toSelect()
             Mode.FINAL -> toTitle()
         }
         return true
@@ -1233,6 +1233,7 @@ class GameView(
     internal val scoresForTest get() = scores.copyOf()
     internal val busy get() = fadeT >= 0f || flyover
     internal val fading get() = fadeT >= 0f
+    internal val messageForTest get() = msg
     internal val isPaused get() = paused
     internal val dragRangePx get() = cancelPx to maxDragPx
     internal val logicalSize get() = Triple(lw, lh, scale)
