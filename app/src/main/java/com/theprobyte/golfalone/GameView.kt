@@ -341,8 +341,10 @@ class GameView(
         ambient.reset(terrain)
         spriteFx.clear()
         celebrateT = -1f; punchT = -1f; slowMo = false; slowChecked = false; shotLive = false
-        for (k in 0 until n) if (k != i && k != i + 1 && terrains[k].isDone) terrains[k].get().releaseWater()
-        if (i + 1 < n) builder.submit { terrains[i + 1].get().prepareWater() }
+        // Keep water for this hole and the next one shown (the title drifts round to hole 1).
+        val next = if (backdrop) (i + 1) % n else i + 1
+        for (k in 0 until n) if (k != i && k != next && terrains[k].isDone) terrains[k].get().releaseWater()
+        if (next < n) builder.submit { terrains[next].get().prepareWater() }
         slopeTiles = (0 until hole.w * hole.h)
             .filter { val t = hole.tiles[it]; t.slopeX != 0f || t.slopeY != 0f }.toIntArray()
         strokes = 0
@@ -391,7 +393,8 @@ class GameView(
     var onImmersive: ((Boolean) -> Unit)? = null
 
     internal fun applyImmersive() {
-        onImmersive?.invoke(mode == Mode.PLAY && progress.hideStatusBar)
+        // Cards count as play, so the bar doesn't slide in and out between holes.
+        onImmersive?.invoke((mode == Mode.PLAY || mode == Mode.CARD) && progress.hideStatusBar)
     }
 
     /** Dissolves out, runs [action], dissolves back in. Input waits until it's done. */
@@ -419,18 +422,25 @@ class GameView(
     internal fun updateGlide(dt: Float) {
         if (glideT < 0f) return
         glideT += dt
-        val d = (lh + 16).toFloat()
         val act = glideAction
         if (act != null) {
-            if (glideT < GLIDE_S) { val k = glideT / GLIDE_S; glideOffset = d * k * k; return }
+            // Out: far enough that the whole old island has left the top of the screen, with a
+            // margin because the last frame drawn before the swap falls a little short.
+            val out = max(lh + 16f, hole.pxH + 16f - camY) * 1.15f
+            if (glideT < GLIDE_S) { val k = glideT / GLIDE_S; glideOffset = out * k * k; return }
             // Halfway: swap islands. The new view starts where the sea's pattern lines up with
             // the old one, so the water runs on without a jump.
             val oldX = camX + glideOffsetX
             val oldY = camY + glideOffset
-            act()
+            val oldH = hole.pxH.toFloat()
+            // The title's drift gives way to anything you've opened since it began.
+            if (glideBlocks || (mode == Mode.TITLE && sheet == Sheet.NONE)) act()
             glideAction = null
             updateCamera(0f)
-            glideFromY = -d + floorModF(oldY - (camY - d), Terrain.SEA_H.toFloat())
+            // In: start with the new island's top below the screen, however tall it is.
+            val d = camY + lh + 16f
+            glideFromY = -d - floorModF(camY - d - oldY, Terrain.SEA_H.toFloat())
+            if (glideSwaps.size < 64) glideSwaps += floatArrayOf(oldY, oldH, camY + glideFromY, lh.toFloat())
             var gx = floorModF(oldX - camX, Terrain.SEA_W.toFloat())
             if (gx > Terrain.SEA_W / 2f) gx -= Terrain.SEA_W
             glideFromX = gx
@@ -1339,6 +1349,8 @@ class GameView(
     internal val scoresForTest get() = scores.copyOf()
     internal val busy get() = fadeT >= 0f || flyover || glideT >= 0f
     internal val gliding get() = glideT >= 0f
+    /** Each glide's swap: the last old view's top, the old map's height, the first new view's top, the screen height. */
+    internal val glideSwaps = ArrayList<FloatArray>()
     internal val sheetForTest get() = sheet
     internal val bookTabForTest get() = bookTab
     internal val slowMotion get() = slowMo

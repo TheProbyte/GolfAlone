@@ -52,9 +52,10 @@ class Ambient {
 
     fun draw(c: Canvas, ix: Int, iy: Int, time: Float, ballX: Float, ballY: Float, ballMoving: Boolean, still: Boolean) {
         val t = (time * 15f).toInt() / 15f
-        for ((i, s) in crabs.withIndex()) drawCrab(c, s % w - ix, s / w - iy, t, i, hypot(ballX - s % w, ballY - s / w) < 14f, still)
-        if (!still) for ((i, s) in flies.withIndex()) drawFly(c, s % w - ix, s / w - iy, t, i)
-        if (!still) for ((i, s) in fish.withIndex()) {
+        for (i in crabs.indices) { val s = crabs[i]; drawCrab(c, s % w - ix, s / w - iy, t, i, hypot(ballX - s % w, ballY - s / w) < 14f, still) }
+        if (!still) for (i in flies.indices) { val s = flies[i]; drawFly(c, s % w - ix, s / w - iy, t, i) }
+        if (!still) for (i in fish.indices) {
+            val s = fish[i]
             val p = ((t + i * 2.3f) % 5f) / 1.4f
             if (p < 1f) Pix.ring(c, s % w - ix + 0.5f, s / w - iy + 0.5f, 1f + p * 4f, Palette.alpha(Palette.POND[4], (170 * (1f - p)).toInt()))
             if (p < 0.12f) px(c, s % w - ix, s / w - iy - 1, Palette.POND[4])

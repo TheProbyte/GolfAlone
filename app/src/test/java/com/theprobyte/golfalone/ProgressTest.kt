@@ -32,6 +32,12 @@ class ProgressTest {
         assertEquals(2, Progress(ctx).best(0))
     }
 
+    @Test fun oldSavesGoToTheCoveWhicheverCourseLoadsFirst() {
+        prefs.edit().clear().putInt("best_0", 3).commit()
+        assertEquals(0, Progress(ctx, "reef").best(0))
+        assertEquals(3, Progress(ctx).best(0))
+    }
+
     @Test fun anotherCourseHasItsOwnRecords() {
         prefs.edit().clear().commit()
         Progress(ctx).record(0, 3)

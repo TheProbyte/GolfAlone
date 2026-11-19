@@ -239,6 +239,8 @@ class UiPlaythroughTest {
         val act = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         game = act.game
         game.dispatchApplyWindowInsets(pixelInsets())
+        // Play hides the status bar; the phone then reports insets without it (gesture zones stay).
+        game.onImmersive = { hide -> game.dispatchApplyWindowInsets(pixelInsets(if (hide) 0 else 63)) }
         run(600)
         val (lw, lh, scale) = game.logicalSize
         println("logical ${lw}x$lh at ${scale}x for ${game.width}x${game.height}")
@@ -298,9 +300,6 @@ class UiPlaythroughTest {
         press(GameView.B_PLAY)
         assertEquals(GameView.Mode.PLAY, game.mode)
         assertTrue(game.courseRun)
-        // Play hides the status bar; the phone then reports insets without it (gesture zones stay).
-        game.dispatchApplyWindowInsets(pixelInsets(statusBar = 0))
-        run(32)
 
         // A pull that starts in the left gesture zone is left to the system (Back): no shot.
         touch(MotionEvent.ACTION_DOWN, 20f, game.height * 0.5f)
@@ -510,5 +509,13 @@ class UiPlaythroughTest {
         assertFalse("no flyover with reduce motion", game.busy)
 
         assertTrue("labels that don't fit: ${game.textOverflows}", game.textOverflows.isEmpty())
+
+        // Every glide (round, practice and the title's drift, Tide Pools included) swapped
+        // islands over open sea: the old one gone off the top, the new one still below.
+        assertTrue(game.glideSwaps.size >= 6)
+        for (s in game.glideSwaps) {
+            assertTrue("old island gone: view top ${s[0]} vs map height ${s[1]}", s[0] >= s[1])
+            assertTrue("new island below: view top ${s[2]} with screen ${s[3]}", s[2] + s[3] <= 0f)
+        }
     }
 }

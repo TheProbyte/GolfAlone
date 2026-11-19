@@ -13,22 +13,22 @@ class Progress(context: Context, private val course: String = "cove") {
 
     init { migrate() }
 
-    /** Version 1 keyed everything by hole number alone; copy those into this course's keys once. */
+    /** Version 1 keyed everything by hole number alone (all of it Driftwood Cove); copy it to the cove's keys once. */
     private fun migrate() {
         if (prefs.getBoolean("save_v2", false)) return
         val e = prefs.edit()
         for (i in 0 until 32) {
             val old = prefs.getInt("best_$i", 0)
-            if (old > 0 && prefs.getInt(bestKey(i), 0) == 0) e.putInt(bestKey(i), old)
+            if (old > 0 && prefs.getInt("best_cove_$i", 0) == 0) e.putInt("best_cove_$i", old)
         }
         val oldCourse = prefs.getInt("course_DRIFTWOOD COVE", 0)
-        if (oldCourse > 0 && prefs.getInt("course_$course", 0) == 0) e.putInt("course_$course", oldCourse)
+        if (oldCourse > 0 && prefs.getInt("course_cove", 0) == 0) e.putInt("course_cove", oldCourse)
         if (prefs.contains("run_hole")) {
-            e.putInt(runKey("hole"), prefs.getInt("run_hole", -1))
-            e.putString(runKey("scores"), prefs.getString("run_scores", ""))
-            e.putInt(runKey("strokes"), prefs.getInt("run_strokes", 0))
-            e.putFloat(runKey("ball_x"), prefs.getFloat("run_ball_x", 0f))
-            e.putFloat(runKey("ball_y"), prefs.getFloat("run_ball_y", 0f))
+            e.putInt("run_cove_hole", prefs.getInt("run_hole", -1))
+            e.putString("run_cove_scores", prefs.getString("run_scores", ""))
+            e.putInt("run_cove_strokes", prefs.getInt("run_strokes", 0))
+            e.putFloat("run_cove_ball_x", prefs.getFloat("run_ball_x", 0f))
+            e.putFloat("run_cove_ball_y", prefs.getFloat("run_ball_y", 0f))
         }
         if (prefs.getBoolean("seen_ramp_tip", false)) e.putBoolean("tip_ramp", true)
         e.putBoolean("save_v2", true).apply()

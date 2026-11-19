@@ -53,7 +53,7 @@ internal fun GameView.drawTitle(c: Canvas) {
     val ry = by + PRIMARY_H + GAP
     // [NEW] [HOLES] [BOOK] [gear], without NEW when there's no round to start over.
     val gw = 30
-    val labels = if (saved) listOf(B_NEW to "NEW", B_HOLES to "HOLES", B_BOOK to "BOOK") else listOf(B_HOLES to "HOLES", B_BOOK to "BOOK")
+    val labels = if (saved) TITLE_ROW_SAVED else TITLE_ROW
     val bw = (lw - pad * 2 - gw - GAP * labels.size) / labels.size
     for ((k, b) in labels.withIndex()) button(c, b.first, pad + k * (bw + GAP), ry, bw, SECONDARY_H, b.second, false)
     iconButton(c, B_SETTINGS, lw - pad - gw, ry, gw, SECONDARY_H, Sprites.iconGear)
@@ -120,3 +120,6 @@ internal fun GameView.drawSelect(c: Canvas) {
     iconButton(c, B_NEXT_HOLE, lw - pad - aw, by, aw, PRIMARY_H, Sprites.iconRight, sel < n - 1)
     button(c, B_BACK, pad, by + PRIMARY_H + GAP, lw - pad * 2, SECONDARY_H, "BACK", false)
 }
+
+private val TITLE_ROW_SAVED = listOf(GameView.B_NEW to "NEW", GameView.B_HOLES to "HOLES", GameView.B_BOOK to "BOOK")
+private val TITLE_ROW = listOf(GameView.B_HOLES to "HOLES", GameView.B_BOOK to "BOOK")
