@@ -22,14 +22,17 @@
    plus the draw-time readout (Q6). Nothing else is converted until you've seen it on the phone.
 2. ✅ **The rest of the art pass**, plus your feedback: calmer deep water, and walls and logs that join diagonally: ponds, banks, boulders, decoration, driftwood and effects (A3, A4, A6–A9).
 3. 🔶 **QoL batch** (Q1–Q4 done; Q5 tips dropped): what you found annoying, then Q1–Q5.
-4. 🔶 **Airborne ball (F1) and ramps (F2) are done.** The loft shot (F3) waits on one question: how should you choose a loft?
+4. ✅ **Airborne ball (F1) and ramps (F2) are done.** The loft shot (F3) is **dropped**: Golf Alone
+   stays a rolling, putting game.
 4½. **Polish pass** ([POLISH_PASS_PLAN.md](POLISH_PASS_PLAN.md)): efficiency, beauty, fun and QoL,
    with no rule changes. **Done:** dawn on Driftwood Cove, the idle throttle, ambient life, the
    glide between islands, tiered celebrations, the Book (stats and postcards), volume sliders and
-   pull length. The loft shot and pars stay parked.
-5. **M3: Saltmarsh and the tide.**
-6. **M4: Lighthouse Point** (wind, crabs, night), with time-of-day palettes (A10).
-7. **Later:** the connected island (D3), endless and daily holes, the ghost of your best round.
+   pull length. Pars stay parked until you've played.
+5. **Nine more courses** ([COURSES_PLAN.md](COURSES_PLAN.md)): Saltmarsh Flats (the tide),
+   Lighthouse Point (buoys, crabs, night), Glass Lagoon, Wreck Bay, Ember Isle, Frostbound Fjord,
+   Temple Cay, Windward Bluffs, and the Starfall Atoll finale on one connected island.
+   Course select and per-stroke hole state come first.
+6. **Later:** endless and daily holes, the ghost of your best round.
 
 Details: [ART_AND_FEATURES_PLAN.md](ART_AND_FEATURES_PLAN.md). Rows still open in the older plans
 (POLISH V8–V10, U9–U10; STYLE P10, U11, E1, E3) are folded into the items above.
@@ -147,7 +150,7 @@ and you never trigger Back or Home by accident.
 
 | # | Mechanic | How it plays |
 |---|---|---|
-| E1 | **Roll versus loft** | Inside the inner ring of the drag, the shot is a roll. Pull past the ring, which clicks with a haptic, and it becomes a **loft**: the ball leaves the ground, its shadow separates, it clears walls and water, then lands and rolls on. Loft trades distance for control. Unlocked in course 3. |
+| ~~E1~~ | ~~**Roll versus loft**~~ (dropped: it's a putting game) | Inside the inner ring of the drag, the shot is a roll. Pull past the ring, which clicks with a haptic, and it becomes a **loft**: the ball leaves the ground, its shadow separates, it clears walls and water, then lands and rolls on. Loft trades distance for control. Unlocked in course 3. |
 | E2 | **The tide** | See section 2. |
 | E3 | **Sand** | Heavy friction. A ball in sand can't loft, only roll. |
 | E4 | **Driftwood bumpers** | Logs that bounce harder than stone and give a satisfying `tok`. |
