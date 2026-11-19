@@ -667,6 +667,15 @@ class GameView(
         }
     }
 
+    /** Whether the ball rests within a few tiles of a ramp (where the one-time ramp tip helps). */
+    private fun nearRamp(): Boolean {
+        if (!hole.hasRamps) return false
+        val tx = floor(physics.x / TILE).toInt()
+        val ty = floor(physics.y / TILE).toInt()
+        for (dy in -4..4) for (dx in -4..4) if (hole.tile(tx + dx, ty + dy).isRamp) return true
+        return false
+    }
+
     override fun onLaunch(x: Float, y: Float, speed: Float) {
         progress.seenRampTip = true
         sfx.launch(speed, pan(x))
@@ -1274,7 +1283,7 @@ class GameView(
                 val text = if (aiming) (if (power > 0f) "LET GO TO SHOOT" else "PULL BACK TO AIM") else "PULL BACK ANYWHERE TO AIM"
                 PixelFont.drawCentered(c, text, lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
             }
-            hole.hasRamps && !progress.seenRampTip && strokes == 0 && !aiming && holeT > 2.6f ->
+            !progress.seenRampTip && !aiming && !physics.moving && nearRamp() ->
                 PixelFont.drawCentered(c, "ROLL UP A RAMP FAST TO JUMP", lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
             isLong() && strokes == 0 && !aiming && !physics.moving && holeT > 2.6f ->
                 PixelFont.drawCentered(c, "HOLD STILL TO PEEK", lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
@@ -1572,6 +1581,7 @@ class GameView(
     internal val ballY get() = physics.y
     internal val ballMoving get() = physics.moving
     internal val ballAirborne get() = physics.airborne
+    internal val fastForwarding get() = fastForward
     internal val ballInCup get() = physics.inCup
     internal val strokesForTest get() = strokes
     internal val scoresForTest get() = scores.copyOf()

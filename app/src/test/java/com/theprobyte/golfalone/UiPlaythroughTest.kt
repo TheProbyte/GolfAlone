@@ -428,6 +428,15 @@ class UiPlaythroughTest {
         assertTrue("chip on the left", game.buttonCenter(GameView.B_PAUSE)!!.first < game.width / 2f)
         frame("96-left-handed")
 
+        // A tap while the ball rolls fast-forwards it.
+        drag(-1.5708f, 0.5f)
+        run(48)
+        assertTrue(game.ballMoving)
+        tap(game.width / 2f, game.height * 0.4f)
+        assertTrue("fast-forwarding", game.fastForwarding || !game.ballMoving)
+        waitForRest()
+        assertFalse(game.fastForwarding)
+
         // Practice pause offers Restart; Back closes the sheet.
         press(GameView.B_PAUSE)
         assertNotNull(game.buttonCenter(GameView.B_RESTART))

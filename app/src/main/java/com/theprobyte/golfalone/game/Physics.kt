@@ -264,11 +264,32 @@ class Physics(val hole: Hole) {
     private fun stepAir(ev: PhysicsEvents) {
         val dt = STEP
         shotTime += dt
+        val prevZ = z
         vz -= GRAVITY * dt
         x += vx * dt
         y += vy * dt
         z += vz * dt
+        // Coming down onto a wall, log, boulder or trunk: its top is a floor at its height,
+        // so the ball hops along it and drops off the edge (no rattling inside the block).
+        val floorH = solidHeightUnder(x, y)
+        if (floorH > 0f && z < floorH && prevZ >= floorH - 0.5f) {
+            z = floorH
+            vz = max(-vz * LAND_BOUNCE, HOP_VZ)
+            val sp = hypot(vx, vy)
+            if (sp < HOP_MIN) {
+                val ux = if (sp > 1e-3f) vx / sp else 0f
+                val uy = if (sp > 1e-3f) vy / sp else -1f
+                vx = ux * HOP_MIN; vy = uy * HOP_MIN
+            }
+            collideWalls(ev, floorH)
+            return
+        }
         collideWalls(ev, max(z, 0f))
+        if (z <= 0f && hole.coast.waterDepth(x, y) >= BALL_R) {
+            // Came down in the water: no bounce, no thump. The ground step splashes it.
+            z = 0f; vz = 0f
+            return
+        }
         if (z <= 0f && insideSolid(x, y)) {
             // Came down on top of a wall, log or trunk: its top is ground that bounces the ball
             // on, so it hops along and drops off the far side rather than ending up inside.
@@ -293,6 +314,24 @@ class Physics(val hole: Hole) {
             lastTile = hole.at(x, y)
         }
         if (shotTime > MAX_ROLL_S) { vx = 0f; vy = 0f; vz = 0f; z = 0f; moving = false; restX = x; restY = y; ev.onStop(x, y) }
+    }
+
+    /** Height of the tallest solid whose footprint holds ([px], [py]), or 0. */
+    private fun solidHeightUnder(px: Float, py: Float): Float {
+        val tx = floor(px / TILE).toInt()
+        val ty = floor(py / TILE).toInt()
+        var h = 0f
+        if (hole.tile(tx, ty) == Tile.WALL && !hole.rails.isBoulder(tx, ty)) h = WALL_H
+        val rails = hole.rails
+        for (i in rails.near(tx, ty)) {
+            if (rails.distance(i, px, py) < rails.r[i]) {
+                h = max(h, when (rails.kind[i]) { Rails.WOOD -> WOOD_H; Rails.BOULDER -> BOULDER_H; else -> WALL_H })
+            }
+        }
+        val p = hole.posts
+        var i = 0
+        while (i < p.size) { if (hypot(px - p[i], py - p[i + 1]) < Hole.POST_R) h = max(h, POST_H); i += 2 }
+        return h
     }
 
     /** Whether ([px], [py]) is inside a wall block, a rail or a palm trunk. */

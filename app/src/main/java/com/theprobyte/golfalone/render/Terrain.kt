@@ -298,6 +298,13 @@ class Terrain(private val hole: Hole) {
         }
     }
 
+    /** Ground that decoration may sit on: not walls, logs, boulders or ramps. */
+    private fun isPlain(i: Int): Boolean {
+        if (i < 0 || i >= w * h) return false
+        val kd = kind[i]
+        return kd != K_WALL && kd != K_WOOD && kd != K_ROCK && kd != K_RAMP
+    }
+
     /** Clusters on a jittered grid: tufts and flowers in the rough, daisies, shells and pebbles. */
     private fun decorate(px: IntArray) {
         fun put(x: Int, y: Int, c: Int, onlyKind: Byte) {
@@ -384,7 +391,7 @@ class Terrain(private val hole: Hole) {
                 val y = gy + (hash(gx, gy, 42) * 3).toInt()
                 if (x in 0 until w && y in 4 until h) {
                     val i = y * w + x
-                    if (nearPond[i] && edge[i] < 2.5f && kind[i] != K_WALL && kind[i] != K_WOOD && hash(gx, gy, 43) < 0.55f) {
+                    if (nearPond[i] && edge[i] < 2.5f && isPlain(i) && isPlain(i - 3 * w) && hash(gx, gy, 43) < 0.55f) {
                         for (k in 0..2) px[i - k * w] = if (k == 0) Palette.LEAF[1] else Palette.LEAF[2]
                         if (hash(gx, gy, 44) < 0.5f) px[i - 3 * w] = Palette.WOODS[1] // a cattail
                     }
@@ -403,7 +410,7 @@ class Terrain(private val hole: Hole) {
                 if (x in 0 until w - 1 && y in 0 until h) {
                     val i = y * w + x
                     val d = edge[i]
-                    if (land[i] && kind[i] != K_WALL && kind[i] != K_WOOD && d in 1.2f..3.2f) {
+                    if (land[i] && isPlain(i) && isPlain(i + 1) && d in 1.2f..3.2f) {
                         val r = hash(gx, gy, 13)
                         when {
                             r < 0.18f -> { px[i] = Palette.SHELL; px[i + 1] = Palette.SHELL_PINK }

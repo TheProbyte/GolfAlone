@@ -29,6 +29,10 @@
 >   - **Tests:** 36 golden ground shots are unchanged; random shots on every hole always end
 >     grounded, outside solids and out of deep water; jumps clear water and low walls; and a ball
 >     never rests on a ramp.
+> - **Flight fixes after review:** a jump that comes down in water splashes at once (no thump or
+>   skip). Wall, log and boulder tops are a floor for a falling ball, so it hops along and off
+>   instead of rattling inside. **First Light's ramp** is a risky shortcut: from lies below it,
+>   119 of 406 swept jumps (29%) end dry. The ramp tip shows only near a ramp.
 > - **The loft shot (F3) is on hold.** As planned, any pull past a ring lofts, which changes how
 >   every hole plays. It waits on how you'd like to choose a loft.
 >

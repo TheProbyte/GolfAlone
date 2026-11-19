@@ -246,6 +246,9 @@ class PhysicsTest {
         "############",
         "#,,,,,,,,,O#",
         "#,,,,,,,,,,#",
+        "#,,,,,,,,,,#",
+        "#,,,,,,,,,,#",
+        "#,,,,,,,,,,#",
         "#~~~~~~~~~~#",
         "#~~~~~~~~~~#",
         "#~~~~~~~~~~#",
@@ -270,9 +273,9 @@ class PhysicsTest {
             })
             maxZ = maxOf(maxZ, p.z)
         }
-        println("ramp jump: max height $maxZ px, came to rest at ${p.x},${p.y}")
-        assertTrue(launched); assertTrue(landed); assertFalse("cleared the water", splashed)
-        assertTrue("landed beyond the water", p.y < 3 * 8f)
+        println("ramp jump: max height $maxZ px, came to rest at ${p.x},${p.y}, launched=$launched landed=$landed splashed=$splashed")
+        assertTrue("launched", launched); assertTrue("landed", landed); assertFalse("cleared the water", splashed)
+        assertTrue("landed beyond the water", p.y < 6 * 8f)
         assertFalse(p.airborne)
         assertFalse("not resting inside the wall", p.y < 8f + Physics.BALL_R - 0.5f)
     }
@@ -283,7 +286,132 @@ class PhysicsTest {
             p.shoot(0f, -1f, i / 100f)
             p.settle()
             assertFalse("power ${i / 100f} stopped on the ramp at ${p.x},${p.y}", p.hole.at(p.x, p.y).isRamp)
+            assertTrue("power ${i / 100f} rests on land", rampPond.coast.isLand(p.x, p.y))
         }
+    }
+
+    @Test fun aJumpThatComesDownInWaterSplashesAtOnce() {
+        var lands = 0
+        var splashes = 0
+        val p = Physics(rampPond)
+        var launched = false
+        p.shoot(0f, -1f, 0.36f) // just enough to hop off the lip into the pond
+        p.settle(object : PhysicsEvents {
+            override fun onLand(x: Float, y: Float, impact: Float) { lands++ }
+            override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { splashes++ }
+            override fun onLaunch(x: Float, y: Float, speed: Float) { launched = true }
+        })
+        assertTrue("hopped off the lip", launched)
+        assertEquals("one splash", 1, splashes)
+        assertEquals("no thump on the water", 0, lands)
+    }
+
+    @Test fun landingOnTopOfAWideWallHopsOffWithoutRattling() {
+        val h = box(
+            "~~~~~~~~~~~~",
+            "~,,,,,,,,,O~",
+            "~,,,,,,,,,,~",
+            "~,,,,###,,,~",
+            "~,,,,###,,,~",
+            "~,,,,###,,,~",
+            "~,,,,,,,,,,~",
+            "~,,,,,N,,,,~",
+            "~,,,,,,,,,,~",
+            "~,,,,,T,,,,~",
+            "~~~~~~~~~~~~",
+        )
+        var hits = 0
+        for (pw in listOf(0.45f, 0.5f, 0.55f)) {
+            val p = Physics(h)
+            hits = 0
+            var landedAt = -1f
+            var touched = false
+            p.shoot(0f, -1f, pw)
+            while (p.moving && p.shotTime < 20f) {
+                p.step(object : PhysicsEvents { override fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) { hits++ } })
+                if (!touched && p.z > 0f && p.y in 24f..48f) { touched = true; landedAt = p.shotTime }
+            }
+            assertTrue("$pw: at most 2 wall hits, got $hits", hits <= 2)
+            assertFalse("$pw: not inside the block at ${p.x},${p.y}", p.x in 40f..64f && p.y in 24f..48f)
+        }
+    }
+
+    /** Shots from dry ground below every ramp, in all directions: the flight invariants hold. */
+    @Test fun invariantsHoldForShotsFromBelowRamps() {
+        val rnd = java.util.Random(7)
+        val maps = listOf(Holes.COVE_1, rampPond, obstacleField)
+        for (hole in maps) {
+            val starts = ArrayList<Pair<Float, Float>>()
+            for (ty in 0 until hole.h) for (tx in 0 until hole.w) {
+                val t = hole.tile(tx, ty)
+                if (!t.isRamp) continue
+                for (k in 1..3) {
+                    val sx = (tx - t.rampX * k + 0.5f) * 8f
+                    val sy = (ty - t.rampY * k + 0.5f) * 8f
+                    if (hole.coast.landDepth(sx, sy) > 3f && !hole.at(sx, sy).solid) starts += sx to sy
+                }
+            }
+            assertTrue("${hole.name}: lies below a ramp", starts.isNotEmpty())
+            val p = Physics(hole)
+            var launches = 0
+            repeat(300) {
+                val (sx, sy) = starts[rnd.nextInt(starts.size)]
+                p.placeAt(sx, sy)
+                var launched = false
+                p.shootAngle((-PI / 2 + (rnd.nextFloat() - 0.5f) * 1.2f).toFloat(), 0.2f + rnd.nextFloat() * 0.8f)
+                val steps = p.settle(object : PhysicsEvents { override fun onLaunch(x: Float, y: Float, speed: Float) { launched = true } })
+                if (launched) launches++
+                val tag = "${hole.name} from $sx,$sy: rest at ${p.x},${p.y}"
+                assertFalse("$tag still flying", p.airborne || p.moving)
+                assertTrue("$tag took too long", steps < (Physics.MAX_ROLL_S * Physics.HZ).toInt() + 20)
+                if (!p.inCup) {
+                    assertTrue("$tag in deep water", hole.coast.waterDepth(p.x, p.y) < Physics.BALL_R)
+                    for (i in 0 until hole.rails.count) assertTrue("$tag inside rail $i", hole.rails.distance(i, p.x, p.y) > hole.rails.r[i] + Physics.BALL_R - 0.6f)
+                }
+            }
+            println("${hole.name}: $launches of 300 shots from below a ramp flew")
+            assertTrue("${hole.name}: some shots fly", launches > 0)
+            // The planner reuses one instance; a flight must not leak into the next shot.
+            val (sx, sy) = starts[0]
+            val fresh = Physics(hole); fresh.placeAt(sx, sy); fresh.shootAngle(-1.5708f, 0.7f); fresh.settle()
+            p.placeAt(sx, sy); p.shootAngle(-1.5708f, 0.7f); p.settle()
+            assertEquals(fresh.x, p.x, 1e-4f); assertEquals(fresh.y, p.y, 1e-4f)
+        }
+    }
+
+    /** A landing zone with a log, a boulder and palms, for the flight fuzz. */
+    private val obstacleField = box(
+        "~~~~~~~~~~~~~~",
+        "~,,,,,,,,,,,O~",
+        "~,,,P,,,,P,,,~",
+        "~,,,,,www,,,,~",
+        "~,,,,,,,,,#,,~",
+        "~,,,P,,,,,,,,~",
+        "~,,,,,,N,,,,,~",
+        "~,,,,,,,,,,,,~",
+        "~,,,,,,T,,,,,~",
+        "~~~~~~~~~~~~~~",
+    )
+
+    @Test fun howOftenARampJumpEndsDry() {
+        // From a few lay-up lies below First Light's ramp: the share of jumps that end dry.
+        val hole = Holes.COVE_1
+        var flights = 0
+        var dry = 0
+        for (sy in listOf(206f, 214f, 222f)) for (a in -20..20 step 2) for (pw in 6..18) {
+            val p = Physics(hole)
+            p.placeAt(60f, sy)
+            var launched = false
+            var splashed = false
+            p.shootAngle(((-90 + a) * PI / 180).toFloat(), pw / 20f)
+            p.settle(object : PhysicsEvents {
+                override fun onLaunch(x: Float, y: Float, speed: Float) { launched = true }
+                override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { splashed = true }
+            })
+            if (launched) { flights++; if (!splashed) dry++ }
+        }
+        println("First Light ramp: $dry of $flights jumps end dry")
+        assertTrue("some jumps end dry", dry > 0)
     }
 
     @Test fun aWeakRollUpARampRollsBack() {
@@ -292,7 +420,7 @@ class PhysicsTest {
         p.shoot(0f, -1f, 0.2f)
         p.settle(object : PhysicsEvents { override fun onLaunch(x: Float, y: Float, speed: Float) { launched = true } })
         assertFalse(launched)
-        assertTrue("back below the ramp", p.y > 6 * 8f)
+        assertTrue("back below the ramp", p.y > 9 * 8f)
     }
 
     @Test fun aFlyingBallClearsLowWallsButNotPalms() {
