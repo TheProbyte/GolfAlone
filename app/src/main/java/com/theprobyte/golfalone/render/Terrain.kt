@@ -459,18 +459,24 @@ class Terrain(private val hole: Hole) {
          * it (2), on a jittered grid that wraps every [SEA_W]×[SEA_H] so the sea can tile.
          */
         fun crest(x: Int, y: Int, f: Int): Int {
-            val cx = x - f
-            val gx = Math.floorMod(Math.floorDiv(cx, 13), 6)
-            val gy = Math.floorMod(Math.floorDiv(y, 9), 8)
-            if (hash(gx, gy, 74) > 0.5f) return 0 // only about half the cells carry a crest
-            val ox = Math.floorDiv(cx, 13) * 13
-            val oy = Math.floorDiv(y, 9) * 9
-            val jx = ox + (hash(gx, gy, 71) * 8).toInt()
-            val jy = oy + (hash(gx, gy, 72) * 6).toInt()
-            val life = (f + (hash(gx, gy, 73) * 8).toInt()) % 8
-            val len = intArrayOf(0, 2, 3, 4, 4, 3, 2, 0)[life]
-            if (len == 0 || cx < jx || cx >= jx + len) return 0
-            return if (y == jy) 1 else if (y == jy + 1) 2 else 0
+            // Each crest drifts left by its own life stage, so the loop never makes one jump.
+            val gy0 = Math.floorDiv(y, 9)
+            val gy = Math.floorMod(gy0, 8)
+            val home = Math.floorDiv(x, 13)
+            for (cell in home..home + 1) {
+                val gx = Math.floorMod(cell, 6)
+                if (hash(gx, gy, 74) > 0.5f) continue // only about half the cells carry a crest
+                val life = (f + (hash(gx, gy, 73) * 8).toInt()) % 8
+                val len = intArrayOf(0, 2, 3, 4, 4, 3, 2, 0)[life]
+                if (len == 0) continue
+                val jx = cell * 13 + (hash(gx, gy, 71) * 8).toInt() - life
+                val jy = gy0 * 9 + (hash(gx, gy, 72) * 6).toInt()
+                if (x >= jx && x < jx + len) {
+                    if (y == jy) return 1
+                    if (y == jy + 1) return 2
+                }
+            }
+            return 0
         }
 
         /** The open sea beyond the map, [FRAMES] tiles of [SEA_W]×[SEA_H]. */

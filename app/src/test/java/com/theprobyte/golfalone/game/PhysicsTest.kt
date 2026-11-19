@@ -85,6 +85,47 @@ class PhysicsTest {
         "~~~~~~~~~~~~",
     )
 
+    @Test fun ballsStoppingOnDrawnSandOverWaterTilesSettleQuickly() {
+        // Drawn sand reaches a little past the tile edge; a ball resting there must stop, not
+        // sit "moving" until the 18 s roll limit.
+        for (hole in Holes.all) {
+            val coast = hole.coast
+            var tested = 0
+            for (py in 0 until hole.pxH step 3) for (px in 0 until hole.pxW step 3) {
+                val x = px + 0.5f
+                val y = py + 0.5f
+                if (!coast.isLand(x, y) || !hole.at(x, y).water || tested >= 5) continue
+                val p = Physics(hole)
+                p.placeAt(x, y)
+                p.shoot(1f, 0f, 0.02f)
+                val steps = p.settle()
+                assertTrue("${hole.name} at $x,$y took ${steps / Physics.HZ.toFloat()} s", steps < Physics.HZ * 2)
+                tested++
+            }
+        }
+    }
+
+    @Test fun aSoftShotFromATeeteredLieMoves() {
+        // Find a teetering shot, then putt gently back inland from where it stopped.
+        for (i in 1..100) {
+            val p = Physics(shore)
+            var teetered = false
+            p.shoot(-1f, 0f, i / 100f)
+            p.settle(object : PhysicsEvents { override fun onTeeter(x: Float, y: Float) { teetered = true } })
+            if (!teetered) continue
+            assertTrue("rests on land", shore.coast.isLand(p.x, p.y))
+            for (power in listOf(0.05f, 0.1f, 0.2f)) {
+                val q = Physics(shore)
+                q.placeAt(p.x, p.y)
+                q.shoot(1f, 0f, power)
+                q.settle()
+                assertTrue("a $power putt inland moved from ${p.x} to ${q.x}", q.x > p.x + 1f)
+            }
+            return
+        }
+        org.junit.Assert.fail("no shot teetered")
+    }
+
     @Test fun aBallReachingTheWaterSlowlyTeetersBeforeAnyGoIn() {
         var firstTeeter = -1
         var firstSplash = -1

@@ -128,9 +128,11 @@ class Physics(val hole: Hole) {
             lastTile = hole.at(x, y)
             return
         }
-        if (depth > 0f && speed < TEETER_SPEED) {
-            // Teetering on the edge: it stays out.
+        if (depth > 0f && speed < TEETER_SPEED && headingDeeper()) {
+            // Teetering on the edge: it stays out, settling back on the last dry spot (on top of
+            // the bank, so it's never drawn on the cliff face, and a soft shot from here moves).
             vx = 0f; vy = 0f; moving = false
+            if (coast.isLand(lastDryX, lastDryY)) { x = lastDryX; y = lastDryY }
             restX = x; restY = y
             ev.onTeeter(x, y)
             return
@@ -165,11 +167,19 @@ class Physics(val hole: Hole) {
         // Stop when slow and nothing (slope) keeps it going, or after a long roll.
         sp = speed
         val slopePush = SLOPE_G * hypot(tile.slopeX, tile.slopeY)
-        if ((sp < STOP_SPEED && (slopePush < tile.c || touchedWall)) || shotTime > MAX_ROLL_S) {
+        if ((sp < STOP_SPEED && (slopePush < c || touchedWall)) || shotTime > MAX_ROLL_S) {
             vx = 0f; vy = 0f; moving = false
             restX = x; restY = y
             ev.onStop(x, y)
         }
+    }
+
+    /** Whether the ball is moving towards deeper water (down the coast's depth gradient). */
+    private fun headingDeeper(): Boolean {
+        val coast = hole.coast
+        val gx = coast.waterDepth(x + 1f, y) - coast.waterDepth(x - 1f, y)
+        val gy = coast.waterDepth(x, y + 1f) - coast.waterDepth(x, y - 1f)
+        return vx * gx + vy * gy > 0f
     }
 
     private var lastDryX = x
