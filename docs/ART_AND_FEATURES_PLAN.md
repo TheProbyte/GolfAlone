@@ -7,8 +7,18 @@
 >   drop is near the entry point, and a wet band slows rolls.
 > - **The slice is built:** W1 water at 8 frames, the tiling sea beyond the map, palm A on the
 >   leaf ramp with swaying fronds and a canopy-shaped shadow, and the draw-time readout (Q6).
-> - **Waiting on your phone check before step 2.** You said you're not fully sold on the palm and
->   grass yet.
+> - **Phone check:** palm and grass are fine. The deep water was too contrasty, and diagonal walls
+>   and logs looked disconnected. FRAME 8.0 ms (p95 10.0) and DRAW 1.4 ms (p95 2.5), at 120 Hz.
+> - **Step 2 is built:**
+>   - Crests are one shade lighter than the sea, with no dark trough.
+>   - Walls and logs are **rails**: segments shared by drawing and physics. Logs join diagonally
+>     and bank the ball at 45°, which makes a hole-in-one possible on Driftwood. Stone staircases
+>     join into one wall, and lone stones are boulders.
+>   - Calm ponds with reeds and lily pads (A3), banks in strata with a grass lip (A4), bushes,
+>     flower patches and starfish (A7), bleached driftwood (A8), and a 3-frame flag (A9).
+>   - Not done: the splash sprite and the landing dust, which come with the airborne ball.
+> - **QoL:** quitting mid-roll plays the shot out (Q1), tapping fast-forwards a roll (Q2), and
+>   holes turn round faster (Q4: 0.2 s fades, a 0.6 s sink, and the card ready at 0.25 s).
 >
 > Strike or reorder anything by ID. The order of work lives in one
 > place now: the **Roadmap** at the top of [PLAN.md](PLAN.md).

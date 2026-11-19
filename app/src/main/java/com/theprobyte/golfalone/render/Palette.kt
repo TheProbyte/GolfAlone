@@ -17,8 +17,12 @@ object Palette {
     val PAPER = intArrayOf(c(0xFF9C8763), c(0xFFC9B48A), c(0xFFE6D6B0), c(0xFFF6EEDB))
     /** Leaves: cooler and deeper than the grass, so canopies stand out from the fairway. */
     val LEAF = intArrayOf(c(0xFF12352B), c(0xFF1F5540), c(0xFF2F7A4A), c(0xFF5AA64E), c(0xFF9FD364))
+    /** Bleached driftwood: grey-tan, sun-dried. */
+    val DRIFT = intArrayOf(c(0xFF3B322E), c(0xFF5E534C), c(0xFF8A7D70), c(0xFFB5A690), c(0xFFDDD0B8))
+    /** Inland ponds: still and a little greener than the sea. */
+    val POND = intArrayOf(c(0xFF163B44), c(0xFF1D5260), c(0xFF276B74), c(0xFF3F8F86), c(0xFF9FD1BF))
     val NIGHT = intArrayOf(c(0xFF0E1522), c(0xFF121C2A), c(0xFF1B2A3A), c(0xFF24384D), c(0xFF4D6F8A))
-    private val ramps = arrayOf(SEA, GRASS, SANDS, STONES, WOODS, PAPER, LEAF, NIGHT)
+    private val ramps = arrayOf(SEA, GRASS, SANDS, STONES, WOODS, PAPER, LEAF, DRIFT, POND, NIGHT)
 
     // ---------------------------------------------------------------- named colours
     // Open sea sits one step up the ramp, so the course reads as daytime.
@@ -73,6 +77,8 @@ object Palette {
     val FLOWER_W = PAPER[3]
     val SHELL = PAPER[3]
     val SHELL_PINK = c(0xFFE3A99A)
+    val STARFISH = c(0xFFE8823A)
+    val STARFISH_DARK = c(0xFFB5552A)
     val PEBBLE = STONES[3]
 
     val CUP = GRASS[0]

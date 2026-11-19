@@ -191,6 +191,55 @@ class PhysicsTest {
         assertTrue(wood > stone * 1.25f)
     }
 
+    @Test fun diagonalLogsJoinAndBankTheBall() {
+        // A "\" diagonal of driftwood: one log, so a ball rolling right is turned downwards.
+        val h = box(
+            ",,,,,,,,,,,,",
+            ",,,w,,,,,,,,",
+            ",T,,w,,,,,,O",
+            ",,,,,w,,,,,,",
+            ",,,,,,,,,,,,",
+        )
+        val rails = h.rails
+        var diagonals = 0
+        for (i in 0 until rails.count) if (rails.kind[i] == Rails.WOOD && rails.x0[i] != rails.x1[i] && rails.y0[i] != rails.y1[i]) diagonals++
+        assertEquals("two diagonal joins", 2, diagonals)
+        val p = Physics(h)
+        p.shoot(1f, 0f, 0.5f)
+        var hit = false
+        while (p.moving && p.shotTime < 3f) {
+            p.step(object : PhysicsEvents { override fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) { hit = hit || wood } })
+            if (hit) break
+        }
+        repeat(30) { p.step() }
+        assertTrue("hit the log", hit)
+        assertTrue("turned downwards: vy=${p.vy} vx=${p.vx}", p.vy > 0f && p.vy > kotlin.math.abs(p.vx) * 0.5f)
+    }
+
+    @Test fun aDiagonalStoneStaircaseHasNoGaps() {
+        // Walled in, so the only way to the right is through the staircase.
+        val h = box(
+            "############",
+            "#,,,,,,,#,,#",
+            "#,,,,,,#,,O#",
+            "#,T,,,#,,,,#",
+            "#,,,,#,,,,,#",
+            "############",
+        )
+        // Fire at the wall from every angle on its left side: nothing crosses to the right.
+        for (a in 0 until 36) {
+            val p = Physics(h)
+            p.shootAngle(-1.4f + a * 0.06f, 1f)
+            var crossed = false
+            while (p.moving && p.shotTime < 4f) {
+                p.step()
+                // The wall runs from (5,4) up to (8,1): x + y = 9 tiles, about 76 px along x + y.
+                if (p.x + p.y > 9.5f * 8f + 8f && p.x > 6.5f * 8f) crossed = true
+            }
+            assertFalse("crossed at angle $a", crossed)
+        }
+    }
+
     @Test fun palmTrunksDeflectTheBall() {
         val h = box(
             ",,,,,,,,,,,,",

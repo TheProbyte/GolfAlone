@@ -155,6 +155,8 @@ class GameView(
     private var shakeT = -1f
     private var rollDist = 0f
     private var teeterT = -1f
+    /** The player tapped while the ball rolled: run the roll at [FAST_FORWARD]×. */
+    private var fastForward = false
     private var flyover = false
 
     private var fadeT = -1f
@@ -412,6 +414,20 @@ class GameView(
     /** In a round, remember this hole's strokes and where the ball lies, so quitting is no free retry. */
     private fun saveHoleInProgress() {
         if (!courseRun || mode != Mode.PLAY || sinkT >= 0f) return
+        if (physics.moving) {
+            // Play the shot out first, so the ball is saved where it really stops.
+            var sunk = false
+            physics.settle(object : PhysicsEvents {
+                override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { strokes++ }
+                override fun onCup(x: Float, y: Float, speed: Float) { sunk = true }
+            })
+            if (sunk) {
+                scores[holeIndex] = strokes
+                progress.record(holeIndex, strokes)
+                if (holeIndex + 1 < n) progress.saveRun(holeIndex + 1, scores) else progress.clearRun()
+                return
+            }
+        }
         progress.saveRun(holeIndex, scores, strokes, physics.restX, physics.restY)
     }
 
@@ -473,9 +489,10 @@ class GameView(
                     tapOutside = !sheetRect.contains(lx, ly)
                 } else when (mode) {
                     Mode.PLAY -> if (flyover) flyover = false // a tap skips the flyover
+                    else if (physics.moving && sheet == Sheet.NONE) fastForward = true // a tap hurries a long roll
                     else if (canAim && !inGestureZone(e.x, e.y)) startAim(e.x, e.y, e.getPointerId(0))
                     Mode.SELECT -> { swipeX = e.x; swipeY = e.y }
-                    Mode.CARD -> tapAnywhere = courseRun && cardT > 0.4f
+                    Mode.CARD -> tapAnywhere = courseRun && cardT > CARD_READY
                     Mode.TITLE -> if (ly < lh / 2) logoDownT = time
                     else -> {}
                 }
@@ -757,10 +774,12 @@ class GameView(
             haptics.tap(this)
         }
 
+        if (!physics.moving) fastForward = false
         if (live && physics.moving) {
-            acc += dt
+            val speedUp = if (fastForward) FAST_FORWARD else 1f
+            acc += dt * speedUp
             var steps = 0
-            while (acc >= Physics.STEP && steps < MAX_STEPS_PER_FRAME) {
+            while (acc >= Physics.STEP && steps < MAX_STEPS_PER_FRAME * speedUp) {
                 physics.step(this)
                 rollDist += physics.speed * Physics.STEP
                 acc -= Physics.STEP
@@ -969,7 +988,7 @@ class GameView(
 
         val near = hypot(physics.x - hole.cupX, physics.y - hole.cupY) < 24f && physics.moving
         val lift = if (sinkT >= 0f) min(3, (sinkT * 20f).toInt()) else 0
-        Sprites.flag(c, cx, cy, ((time * (if (near) 12f else 3f)).toInt()) % 2, lift)
+        Sprites.flag(c, cx, cy, ((time * (if (near) 12f else 4f)).toInt()) % 3, lift)
 
         // Gull and its shadow.
         if (gullT >= 0f) {
@@ -1226,6 +1245,7 @@ class GameView(
         val a = (255 * pulse).toInt()
         val sh = Palette.alpha(Palette.INK_SHADOW, a)
         when {
+            fastForward -> PixelFont.drawCentered(c, ">> FAST", lw / 2, hy, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
             peeking -> PixelFont.drawCentered(c, "PEEKING AT THE GREEN", lw / 2, hy, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
             flyover && holeT > 0.4f -> PixelFont.drawCentered(c, "TAP TO SKIP", lw / 2, hy, Palette.INK_DIM, 1, Palette.INK_SHADOW, Face.BIG)
             progress.best(0) == 0 && holeIndex == 0 && strokes == 0 && !physics.moving && holeT > 1f -> {
@@ -1450,12 +1470,12 @@ class GameView(
             bigText(c, "ROUND ${parText(toPar())}", lw / 2, y, if (toPar() <= 0) Palette.STAMP_RED else Palette.PAPER_INK)
             y += 12
         }
-        if (cardT < 0.35f) return
+        if (cardT < CARD_READY) return
         val pad = 8
         if (courseRun) {
             val last = holeIndex == n - 1
             button(c, B_NEXT, pad, safeBottom - PRIMARY_H, lw - pad * 2, PRIMARY_H, if (last) "SEE SCORECARD" else "NEXT HOLE", true)
-            if (cardT > 0.4f) bigText(c, "OR TAP ANYWHERE", lw / 2, safeBottom - PRIMARY_H - 11, Palette.PAPER_INK_DIM)
+            bigText(c, "OR TAP ANYWHERE", lw / 2, safeBottom - PRIMARY_H - 11, Palette.PAPER_INK_DIM)
         } else {
             val bw = (lw - pad * 2 - GAP) / 2
             val ry = safeBottom - PRIMARY_H - GAP - SECONDARY_H
@@ -1563,10 +1583,13 @@ class GameView(
         const val LOGICAL_W = 180
         const val HUD_H = 14
         const val GULL_SPEED = 26f
-        const val FADE = 0.28f
+        const val FADE = 0.2f
         const val WATER_FPS = 6f
+        const val FAST_FORWARD = 3f
+        /** How soon a hole card takes input. */
+        const val CARD_READY = 0.25f
         const val LONG_SCROLL = 64
-        const val SINK_S = 0.7f
+        const val SINK_S = 0.6f
         const val PEEK_HOLD = 0.35f
         const val MAX_STEPS_PER_FRAME = Physics.HZ / 8
 

@@ -235,8 +235,11 @@ class Physics(val hole: Hole) {
         val ty0 = floor((y - r) / TILE).toInt()
         val ty1 = floor((y + r) / TILE).toInt()
         var maxImpact = 0f
+        val rails = hole.rails
         for (ty in ty0..ty1) for (tx in tx0..tx1) {
-            if (!hole.tile(tx, ty).solid) continue
+            // Driftwood and boulders collide as rails (below), not as square tiles.
+            val tt = hole.tile(tx, ty)
+            if (!tt.solid || tt == Tile.WOOD || rails.isBoulder(tx, ty)) continue
             val left = (tx * TILE).toFloat()
             val top = (ty * TILE).toFloat()
             val px = min(max(x, left), left + TILE)
@@ -260,6 +263,32 @@ class Physics(val hole: Hole) {
             if (vn < 0f) {
                 bounce(nx, ny, vn, hole.tile(tx, ty).e)
                 if (-vn > maxImpact) { maxImpact = -vn; impactWood = hole.tile(tx, ty) == Tile.WOOD }
+            }
+        }
+        // Rails: logs, diagonal wall joins and boulders.
+        val ctx = floor(x / TILE).toInt()
+        val cty = floor(y / TILE).toInt()
+        for (i in rails.near(ctx, cty)) {
+            val t = rails.along(i, x, y)
+            val px = rails.x0[i] + (rails.x1[i] - rails.x0[i]) * t
+            val py = rails.y0[i] + (rails.y1[i] - rails.y0[i]) * t
+            val dx = x - px
+            val dy = y - py
+            val rr = r + rails.r[i]
+            val d2 = dx * dx + dy * dy
+            if (d2 >= rr * rr) continue
+            val d = sqrt(d2)
+            val nx: Float
+            val ny: Float
+            if (d < 1e-4f) { val sp = max(speed, 1e-4f); nx = -vx / sp; ny = -vy / sp } else { nx = dx / d; ny = dy / d }
+            x = px + nx * rr
+            y = py + ny * rr
+            touchedWall = true
+            val vn = vx * nx + vy * ny
+            if (vn < 0f) {
+                val wood = rails.kind[i] == Rails.WOOD
+                bounce(nx, ny, vn, if (wood) Tile.WOOD.e else Tile.WALL.e)
+                if (-vn > maxImpact) { maxImpact = -vn; impactWood = wood }
             }
         }
         // Palm trunks: round posts.

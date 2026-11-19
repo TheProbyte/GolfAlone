@@ -57,6 +57,9 @@ class Hole(val name: String, val par: Int, rows: List<String>) {
     /** The drawn coastline, per pixel; physics and rendering share it. */
     val coast: Coast by lazy { Coast(this) }
 
+    /** Logs, diagonal wall joins and boulders as round-ended segments; physics and rendering share them. */
+    val rails: Rails by lazy { Rails(this) }
+
     init {
         require(rows.all { it.length == w }) {
             "$name: rows must all be $w wide: " + rows.withIndex().filter { it.value.length != w }.map { it.index }

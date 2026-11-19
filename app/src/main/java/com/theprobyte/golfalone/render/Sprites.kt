@@ -61,6 +61,7 @@ object Sprites {
     private val flagFrames = listOf(
         Sprite("flag-0", listOf("rrrrro.", "rrrrrro", "ddddo..", "ddo...."), flagColours),
         Sprite("flag-1", listOf("rrrrrro", "rrrrro.", "dddddo.", "ddo...."), flagColours),
+        Sprite("flag-2", listOf("rrrrro.", "rrrrrro", "rrrrro.", "dddo..."), flagColours),
     )
 
     /** Flag on its pole above the cup at ([cx], [cy]); [wave] 0/1, [lift] raises it when holed. */
@@ -69,7 +70,7 @@ object Sprites {
         for (i in 1..8) px(c, cx + i, cy - 1 + i / 3, Palette.alpha(Palette.CUP, 70)) // pole shadow
         rect(c, cx, top, 1, cy - top, Palette.POLE)
         px(c, cx, top - 1, Palette.GOLD)
-        flagFrames[wave and 1].draw(c, cx + 1, top)
+        flagFrames[wave % flagFrames.size].draw(c, cx + 1, top)
     }
 
     private val cupSprite = Sprite("cup", listOf(".ooooo.", "ooooooo", "ooooooo", ".lllll."),
