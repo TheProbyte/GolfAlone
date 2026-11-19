@@ -96,6 +96,10 @@ class PhysicsTest {
                 val x = px + 0.5f
                 val y = py + 0.5f
                 if (!coast.isLand(x, y) || !hole.at(x, y).water || tested >= 5) continue
+                // A current next door carries the ball on (that's its job, not a stuck ball).
+                val tx = (x / TILE).toInt()
+                val ty = (y / TILE).toInt()
+                if ((-1..1).any { dy -> (-1..1).any { dx -> hole.tile(tx + dx, ty + dy).flows } }) continue
                 val p = Physics(hole)
                 p.placeAt(x, y)
                 p.shoot(1f, 0f, 0.02f)
