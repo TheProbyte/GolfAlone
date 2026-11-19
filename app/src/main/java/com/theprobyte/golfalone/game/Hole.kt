@@ -26,6 +26,13 @@ enum class Tile(
     /** A current's direction (it carries the ball that way), or 0. */
     val flowX: Float = 0f,
     val flowY: Float = 0f,
+    /** A ledge's drop direction (one-way: you roll off it that way, it's a wall from below), or 0. */
+    val dropX: Float = 0f,
+    val dropY: Float = 0f,
+    /** A steam vent: it throws a rolling ball into a hop. */
+    val vent: Boolean = false,
+    /** An exposed ridge: the hole's wind pushes the ball here. */
+    val windy: Boolean = false,
 ) {
     WATER(water = true),
     WALL(solid = true),
@@ -56,12 +63,38 @@ enum class Tile(
     /** A wreck's timbers: a wooden wall. */
     HULL(solid = true, e = 0.7f),
     /** A cracked plank: a wooden wall that a hard hit smashes open (deck beneath). */
-    PLANK(solid = true, e = 0.55f);
+    PLANK(solid = true, e = 0.55f),
+    VENT(c = 40f, k = 1.2f, vent = true),
+    /** Volcanic glass: almost no grip. */
+    OBSIDIAN(c = 8f, k = 0.4f),
+    /** A glowing hazard that works like water. */
+    LAVA(water = true),
+    ICE(c = 12f, k = 0.5f),
+    /** Ice that cracks under a rolling ball and opens to water after the shot. */
+    THIN_ICE(c = 12f, k = 0.5f),
+    /** Soft snow: a ball rolling in stops dead. */
+    SNOW(c = 500f, k = 8f),
+    /** A switch plate (see Hole.plateOf): rolling over it opens its gates. */
+    PLATE(c = 36f, k = 1f),
+    /** A stone gate: a wall until its plate opens it (then temple floor). */
+    GATE(solid = true, e = 0.6f),
+    /** A tunnel's mouth (in) and where it comes out (out). */
+    TUNNEL_IN(c = 36f, k = 1f),
+    TUNNEL_OUT(c = 36f, k = 1f),
+    /** Overgrowth: heavy rough. */
+    VINES(c = 200f, k = 4f),
+    LEDGE_N(c = 40f, k = 1.2f, dropY = -1f),
+    LEDGE_S(c = 40f, k = 1.2f, dropY = 1f),
+    LEDGE_E(c = 40f, k = 1.2f, dropX = 1f),
+    LEDGE_W(c = 40f, k = 1.2f, dropX = -1f),
+    /** Exposed grass on a ridge, in the wind. */
+    RIDGE(c = 40f, k = 1.2f, windy = true);
 
     val isGreen get() = this == GREEN || slopeX != 0f || slopeY != 0f
     val isRamp get() = rampX != 0f || rampY != 0f
     val isLand get() = !water
     val flows get() = flowX != 0f || flowY != 0f
+    val isLedge get() = dropX != 0f || dropY != 0f
     /** Made of wood (for sounds): driftwood, hull and planks. */
     val wooden get() = this == WOOD || this == HULL || this == PLANK
 }
@@ -71,6 +104,13 @@ object Tide {
     const val PERIOD = 6
     fun phase(p: Int) = Math.floorMod(p, PERIOD)
     fun high(p: Int) = phase(p) >= PERIOD / 2
+}
+
+/** A windmill: blades of [length] px turning about a hub tile at [omega] rad/s, from [phase] at the start of every shot. */
+class Windmill(val tx: Int, val ty: Int, val length: Float = 13f, val omega: Float = 1.6f, val phase: Float = 0.4f, val blades: Int = 4) {
+    val hubX get() = (tx + 0.5f) * TILE
+    val hubY get() = (ty + 0.5f) * TILE
+    fun angle(t: Float) = phase + omega * t
 }
 
 /** A hermit crab's patrol: tiles walked one per shot, there and back. */
@@ -106,6 +146,11 @@ class Crab(vararg waypoints: Pair<Int, Int>) {
  * `8 2 6 4` a current flowing north, south, east or west (as on a number pad), `H` hull
  * timber, `x` a cracked plank, `k` a coral head (in shallows), `o` a bumper buoy (on fairway),
  * `D` a barrel on deck and `b` a barrel on fairway.
+ *
+ * And: `V` a steam vent, `g` obsidian, `L` lava, `i` ice, `j` thin ice, `n` snowbank,
+ * `p` / `q` switch plates for gates `G` / `J` (`u` a plate that opens nothing), `(` and `[`
+ * tunnel mouths coming out at `)` and `]`, `r` vines, `A U F Z` ledges dropping north, south,
+ * east or west, and `;` a windswept ridge.
  */
 class Hole(
     val name: String,
@@ -117,7 +162,14 @@ class Hole(
     /** Scenery only: a lighthouse (its tile is drawn as the tower) and lantern posts, as tiles. */
     val lighthouse: Pair<Int, Int>? = null,
     val lanterns: List<Pair<Int, Int>> = emptyList(),
+    val windmills: List<Windmill> = emptyList(),
+    /** The wind's direction in degrees (0 east, 90 south) on ridge tiles, or null. */
+    val windDeg: Float? = null,
 ) {
+    /** How the course paints its shores and grass: "" (sand), "ember" (black sand), "frost" (snow). Set by the course. */
+    var style: String = ""
+    val windX: Float = windDeg?.let { kotlin.math.cos(Math.toRadians(it.toDouble())).toFloat() } ?: 0f
+    val windY: Float = windDeg?.let { kotlin.math.sin(Math.toRadians(it.toDouble())).toFloat() } ?: 0f
     val w: Int = rows.first().length
     val h: Int = rows.size
     val tiles: Array<Tile>
@@ -137,6 +189,17 @@ class Hole(
     val plankCount: Int
     /** Whether the tide covers anything here. */
     val tidal: Boolean
+    /** For each tile: its index among the thin-ice tiles, or -1. */
+    val thinOf: IntArray
+    val thinCount: Int
+    /** For each tile: a plate's gate group (0 opens 'G', 1 opens 'J', -1 a decoy), a gate's group, or -2. */
+    val plateOf: IntArray
+    /** Tunnels: for each tile, which tunnel's mouth it is (or -1); where each comes out, and which way. */
+    val tunnelOf: IntArray
+    val exitX = FloatArray(2)
+    val exitY = FloatArray(2)
+    val exitDX = FloatArray(2)
+    val exitDY = FloatArray(2)
     val pxW get() = w * TILE
     val pxH get() = h * TILE
 
@@ -162,6 +225,10 @@ class Hole(
         val buoyList = ArrayList<Float>()
         val barrelList = ArrayList<Float>()
         fun centre(list: ArrayList<Float>, x: Int, y: Int) { list += (x + 0.5f) * TILE; list += (y + 0.5f) * TILE }
+        val plates = IntArray(rows.first().length * rows.size) { -2 }
+        val mouths = IntArray(rows.first().length * rows.size) { -1 }
+        val outs = arrayOfNulls<Pair<Int, Int>>(2)
+        val rowW = rows.first().length
         tiles = Array(w * h) { i ->
             val x = i % w
             val y = i / w
@@ -196,6 +263,27 @@ class Hole(
                 'o' -> { centre(buoyList, x, y); Tile.FAIRWAY }
                 'D' -> { centre(barrelList, x, y); Tile.DECK }
                 'b' -> { centre(barrelList, x, y); Tile.FAIRWAY }
+                'V' -> Tile.VENT
+                'g' -> Tile.OBSIDIAN
+                'L' -> Tile.LAVA
+                'i' -> Tile.ICE
+                'j' -> Tile.THIN_ICE
+                'n' -> Tile.SNOW
+                'p' -> { plates[y * rowW + x] = 0; Tile.PLATE }
+                'q' -> { plates[y * rowW + x] = 1; Tile.PLATE }
+                'u' -> { plates[y * rowW + x] = -1; Tile.PLATE }
+                'G' -> { plates[y * rowW + x] = 0; Tile.GATE }
+                'J' -> { plates[y * rowW + x] = 1; Tile.GATE }
+                '(' -> { mouths[y * rowW + x] = 0; Tile.TUNNEL_IN }
+                '[' -> { mouths[y * rowW + x] = 1; Tile.TUNNEL_IN }
+                ')' -> { outs[0] = x to y; Tile.TUNNEL_OUT }
+                ']' -> { outs[1] = x to y; Tile.TUNNEL_OUT }
+                'r' -> Tile.VINES
+                'A' -> Tile.LEDGE_N
+                'U' -> Tile.LEDGE_S
+                'F' -> Tile.LEDGE_E
+                'Z' -> Tile.LEDGE_W
+                ';' -> Tile.RIDGE
                 'T' -> { tee = x to y; Tile.FAIRWAY }
                 'O' -> { cup = x to y; Tile.GREEN }
                 else -> error("$name: unknown tile '$ch' at $x,$y")
@@ -232,6 +320,24 @@ class Hole(
         }
         plankOf = group
         plankCount = groups
+        var thin = 0
+        thinOf = IntArray(w * h) { if (tiles[it] == Tile.THIN_ICE) thin++ else -1 }
+        thinCount = thin
+        plateOf = plates
+        tunnelOf = mouths
+        for (k in 0..1) {
+            val o = outs[k]
+            val hasMouth = mouths.any { it == k }
+            require((o == null) == !hasMouth) { "$name: tunnel $k needs one mouth and one way out" }
+            if (o == null) continue
+            val (ox, oy) = o
+            // It comes out of a wall: leave facing away from it.
+            val dirs = arrayOf(0 to -1, 0 to 1, 1 to 0, -1 to 0)
+            val d = dirs.firstOrNull { (dx, dy) -> tile(ox - dx, oy - dy).solid && !tile(ox + dx, oy + dy).solid }
+                ?: error("$name: tunnel $k's way out must have a wall behind it")
+            exitX[k] = (ox + 0.5f) * TILE; exitY[k] = (oy + 0.5f) * TILE
+            exitDX[k] = d.first.toFloat(); exitDY[k] = d.second.toFloat()
+        }
         for (c in crabs) for ((cx, cy) in c.tiles) require(!tile(cx, cy).solid && !tile(cx, cy).water) { "$name: crab path crosses ($cx, $cy)" }
     }
 
@@ -244,10 +350,10 @@ class Hole(
     }
 
     /** The same hole with its ramps paved over (to prove par doesn't depend on them). */
-    fun withoutRamps(): Hole = Hole(name, par, rows.map { r -> r.map { if (it in "NESW") '.' else it }.joinToString("") }, tideStart, crabs, lighthouse, lanterns)
+    fun withoutRamps(): Hole = Hole(name, par, rows.map { r -> r.map { if (it in "NESW") '.' else it }.joinToString("") }, tideStart, crabs, lighthouse, lanterns, windmills, windDeg).also { it.style = style }
 
     /** The same hole with the tide always in (to prove par doesn't depend on timing it). */
-    fun withoutTide(): Hole = Hole(name, par, rows.map { r -> r.map { if (it == 't') '~' else it }.joinToString("") }, tideStart, crabs, lighthouse, lanterns)
+    fun withoutTide(): Hole = Hole(name, par, rows.map { r -> r.map { if (it == 't') '~' else it }.joinToString("") }, tideStart, crabs, lighthouse, lanterns, windmills, windDeg).also { it.style = style }
 
     /** Whether a tile index is a plank (any state). */
     fun plankAt(tx: Int, ty: Int): Int = if (tx < 0 || ty < 0 || tx >= w || ty >= h) -1 else plankOf[ty * w + tx]
@@ -258,6 +364,9 @@ class Hole(
     val currentTiles: IntArray by lazy { tiles.indices.filter { tiles[it].flows }.toIntArray() }
 
     /** Off the map is open sea. */
+    fun thinAt(tx: Int, ty: Int): Int = if (tx < 0 || ty < 0 || tx >= w || ty >= h) -1 else thinOf[ty * w + tx]
+    fun plateAt(tx: Int, ty: Int): Int = if (tx < 0 || ty < 0 || tx >= w || ty >= h) -2 else plateOf[ty * w + tx]
+
     fun tile(tx: Int, ty: Int): Tile =
         if (tx < 0 || ty < 0 || tx >= w || ty >= h) Tile.WATER else tiles[ty * w + tx]
 

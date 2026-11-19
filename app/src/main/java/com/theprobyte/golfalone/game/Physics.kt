@@ -32,6 +32,14 @@ interface PhysicsEvents {
     /** Knocked a barrel at [impact], or a barrel sank. */
     fun onBarrel(x: Float, y: Float, impact: Float) {}
     fun onBarrelSink(x: Float, y: Float) {}
+    /** Thrown up by a steam vent. */
+    fun onVent(x: Float, y: Float) {}
+    /** Rolled over a switch plate; [opened] if it opened its gates just now. */
+    fun onPlate(x: Float, y: Float, opened: Boolean) {}
+    /** Cracked thin ice (it opens after this shot). */
+    fun onCrack(x: Float, y: Float) {}
+    /** Into a tunnel's mouth at ([x0], [y0]) and out at ([x1], [y1]). */
+    fun onTunnel(x0: Float, y0: Float, x1: Float, y1: Float) {}
 
     object None : PhysicsEvents
 }
@@ -64,6 +72,8 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
     /** The ball itself has stopped, but the shot goes on while barrels still roll. */
     private var ballStill = false
     private var kicks = 0
+    /** The vent tile that last threw the ball (so it doesn't throw it again as it lands), or -1. */
+    private var ventFrom = -1
 
     /** The ball's part of the shot is over; the shot ends once nothing else is moving. */
     private fun endBall() {
@@ -92,6 +102,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         moving = true
         ballStill = false
         kicks = 0
+        ventFrom = -1
         lipped = false
         shotTime = 0f
         lastTile = hole.at(x, y)
@@ -145,6 +156,9 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         // A ramp is a steep climb: it slows the ball on the way up and rolls a slow one back.
         vx -= tile.rampX * RAMP_G * dt
         vy -= tile.rampY * RAMP_G * dt
+        // A ledge's lip tips the ball over; the wind leans on it up on the ridges.
+        if (tile.isLedge) { vx += tile.dropX * LEDGE_G * dt; vy += tile.dropY * LEDGE_G * dt }
+        if (tile.windy) { vx += hole.windX * WIND_G * dt; vy += hole.windY * WIND_G * dt }
         // A current draws the ball towards its own drift.
         if (tile.flows) {
             vx += (tile.flowX * CURRENT_V - vx) * CURRENT_K * dt
@@ -194,6 +208,16 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             lastTile = hole.at(x, y)
             return
         }
+        // Thin ice that has given way: in once the whole ball is over the hole.
+        if (hole.thinCount > 0 && state.thinOpenAt(x, y) && overOpenIce()) {
+            val (dx, dy) = dropPoint()
+            ev.onSplash(x, y, dx, dy)
+            x = dx; y = dy; vx = 0f; vy = 0f
+            restX = x; restY = y
+            endBall()
+            lastTile = hole.at(x, y)
+            return
+        }
         if (depth > 0f && speed < TEETER_SPEED && !tile.flows && headingDeeper()) {
             // Teetering on the edge: it stays out, settling back on the last dry spot (on top of
             // the bank, so it's never drawn on the cliff face, and a soft shot from here moves).
@@ -213,6 +237,9 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             vx *= MUD_PLUG; vy *= MUD_PLUG
             if (speed > 15f) ev.onSand(x, y, speed)
         }
+        if (now != lastTile && specialTile(now, ev)) return
+        // Every tile of thin ice the ball rolls over cracks.
+        if (now == Tile.THIN_ICE) crack(floor(x / TILE).toInt(), floor(y / TILE).toInt(), ev)
         lastTile = now
 
         // The cup: slow balls drop, fast ones lip out and are flung round the rim.
@@ -240,12 +267,72 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
 
         // Stop when slow and nothing (slope) keeps it going, or after a long roll.
         sp = speed
-        val slopePush = SLOPE_G * hypot(tile.slopeX, tile.slopeY) + RAMP_G * hypot(tile.rampX, tile.rampY)
+        val slopePush = SLOPE_G * hypot(tile.slopeX, tile.slopeY) + RAMP_G * hypot(tile.rampX, tile.rampY) +
+            (if (tile.isLedge) LEDGE_G else 0f) + (if (tile.windy) WIND_G else 0f)
         if ((sp < STOP_SPEED && (slopePush < c || touchedWall) && !tile.flows) || shotTime > MAX_ROLL_S) {
             vx = 0f; vy = 0f; endBall()
             restX = x; restY = y
             ev.onStop(x, y)
         }
+    }
+
+    /**
+     * Rolling onto a vent, plate, tunnel mouth, thin ice or snow (the tile changed this step).
+     * Returns true if the step is over (the ball was thrown up or sent through a tunnel).
+     */
+    private fun specialTile(now: Tile, ev: PhysicsEvents): Boolean {
+        val tx = floor(x / TILE).toInt()
+        val ty = floor(y / TILE).toInt()
+        val idx = ty * hole.w + tx
+        when (now) {
+            Tile.VENT -> if (idx != ventFrom) { ventLaunch(idx, ev); lastTile = now; return true }
+            Tile.PLATE -> {
+                val g = hole.plateAt(tx, ty)
+                val opens = g >= 0 && !state.gates[g]
+                if (opens) state.gates[g] = true
+                ev.onPlate((tx + 0.5f) * TILE, (ty + 0.5f) * TILE, opens)
+            }
+            Tile.TUNNEL_IN -> {
+                val k = hole.tunnelOf[idx]
+                val sp = max(speed, TUNNEL_MIN)
+                val x0 = x
+                val y0 = y
+                x = hole.exitX[k] + hole.exitDX[k] * 2f
+                y = hole.exitY[k] + hole.exitDY[k] * 2f
+                vx = hole.exitDX[k] * sp; vy = hole.exitDY[k] * sp
+                lastDryX = x; lastDryY = y; entryVx = vx; entryVy = vy
+                lastTile = Tile.TUNNEL_OUT
+                ev.onTunnel(x0, y0, x, y)
+                return true
+            }
+            Tile.SNOW -> { vx *= SNOW_PLUG; vy *= SNOW_PLUG; if (speed > 5f) ev.onSand(x, y, speed) }
+            else -> {}
+        }
+        if (!now.vent) ventFrom = -1
+        return false
+    }
+
+    private fun crack(tx: Int, ty: Int, ev: PhysicsEvents) {
+        val k = hole.thinAt(tx, ty)
+        if (k >= 0 && !state.cracked[k] && !state.thinOpen[k]) { state.cracked[k] = true; ev.onCrack((tx + 0.5f) * TILE, (ty + 0.5f) * TILE) }
+    }
+
+    /** A vent throws the ball up and forward (at least [VENT_MIN_V], so even a soft ball clears a seam). */
+    private fun ventLaunch(idx: Int, ev: PhysicsEvents) {
+        val sp = speed
+        if (sp < 1e-3f) return
+        val hs = max(sp, VENT_MIN_V)
+        vx = vx / sp * hs; vy = vy / sp * hs
+        vz = VENT_LIFT; z = LAUNCH_Z
+        ventFrom = idx
+        ev.onVent(x, y)
+    }
+
+    /** Whether the whole ball is over open thin ice (or water). */
+    private fun overOpenIce(): Boolean {
+        val r = BALL_R
+        fun open(px: Float, py: Float) = hole.at(px, py).water || state.thinOpenAt(px, py)
+        return open(x + r, y) && open(x - r, y) && open(x, y + r) && open(x, y - r)
     }
 
     /** Whether the ball is moving towards deeper water (down the coast's depth gradient). */
@@ -275,7 +362,8 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             val px = lastDryX - ux * k
             val py = lastDryY - uy * k
             val t = hole.at(px, py)
-            if (coast.landDepth(px, py) >= BALL_R + 1f && !t.solid && !t.isRamp && !t.flows && clearOfPosts(px, py)) return px to py
+            if (coast.landDepth(px, py) >= BALL_R + 1f && !t.solid && !t.isRamp && !t.flows && !t.vent && !t.isLedge &&
+                !nearOpenIce(px, py) && clearOfPosts(px, py)) return px to py
             k += 1f
         }
         // A current carried it in (no dry ground along its path): back to where the shot was played.
@@ -291,6 +379,14 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             i += 2
         }
         return clearOfBodies(px, py, 0.5f)
+    }
+
+    /** Whether open thin ice is under any part of a ball at ([px], [py]). */
+    private fun nearOpenIce(px: Float, py: Float): Boolean {
+        if (hole.thinCount == 0) return false
+        val r = BALL_R
+        return state.thinOpenAt(px, py) || state.thinOpenAt(px + r, py) || state.thinOpenAt(px - r, py) ||
+            state.thinOpenAt(px, py + r) || state.thinOpenAt(px, py - r)
     }
 
     /** Clear of corals, buoys, crabs and barrels by [gap]. */
@@ -368,6 +464,11 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             vx *= keep; vy *= keep
             if (impact > BOUNCE_MIN) { vz = impact * LAND_BOUNCE; z = 0.001f } else vz = 0f
             lastTile = hole.at(x, y)
+            // Coming down on another vent: thrown on again.
+            val ltx = floor(x / TILE).toInt()
+            val lty = floor(y / TILE).toInt()
+            if (lastTile.vent && lty * hole.w + ltx != ventFrom) ventLaunch(lty * hole.w + ltx, ev)
+            else if (lastTile == Tile.THIN_ICE) crack(ltx, lty, ev)
         }
         if (shotTime > MAX_ROLL_S) { vx = 0f; vy = 0f; vz = 0f; z = 0f; endBall(); restX = x; restY = y; ev.onStop(x, y) }
     }
@@ -381,6 +482,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         if (t == Tile.WALL && !hole.rails.isBoulder(tx, ty)) h = WALL_H
         else if (t == Tile.HULL) h = WALL_H
         else if (t == Tile.PLANK && !state.plankBroken(tx, ty)) h = WOOD_H
+        else if (t == Tile.GATE && !state.gateOpen(tx, ty)) h = WALL_H
         val rails = hole.rails
         for (i in rails.near(tx, ty)) {
             if (rails.distance(i, px, py) < rails.r[i]) {
@@ -400,6 +502,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         val t = hole.tile(tx, ty)
         if (t == Tile.WALL && !hole.rails.isBoulder(tx, ty)) return true
         if (t == Tile.HULL || (t == Tile.PLANK && !state.plankBroken(tx, ty))) return true
+        if (t == Tile.GATE && !state.gateOpen(tx, ty)) return true
         if (!clearOfBodies(px, py, 0.5f - BALL_R)) return true
         val rails = hole.rails
         for (i in rails.near(tx, ty)) if (rails.distance(i, px, py) < rails.r[i] + 0.5f) return true
@@ -422,8 +525,10 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         for (ty in ty0..ty1) for (tx in tx0..tx1) {
             // Driftwood and boulders collide as rails (below), not as square tiles.
             val tt = hole.tile(tx, ty)
+            if (tt.isLedge) { if (height < WALL_H) hitLedge(tx, ty, tt, ev); continue }
             if (!tt.solid || tt == Tile.WOOD || rails.isBoulder(tx, ty) || height >= WALL_H) continue
             if (tt == Tile.PLANK) { if (height < WOOD_H) hitPlank(tx, ty, ev); continue }
+            if (tt == Tile.GATE && state.gateOpen(tx, ty)) continue
             val left = (tx * TILE).toFloat()
             val top = (ty * TILE).toFloat()
             val px = min(max(x, left), left + TILE)
@@ -533,6 +638,36 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         }
     }
 
+    /** A ledge seen from below is a cliff: solid only for a ball on its downhill side. */
+    private fun hitLedge(tx: Int, ty: Int, t: Tile, ev: PhysicsEvents) {
+        val left = (tx * TILE).toFloat()
+        val top = (ty * TILE).toFloat()
+        val below = when {
+            t.dropY > 0f -> y > top + TILE
+            t.dropY < 0f -> y < top
+            t.dropX > 0f -> x > left + TILE
+            else -> x < left
+        }
+        if (!below) return
+        val r = BALL_R
+        val px = min(max(x, left), left + TILE)
+        val py = min(max(y, top), top + TILE)
+        var nx = x - px
+        var ny = y - py
+        val d2 = nx * nx + ny * ny
+        if (d2 >= r * r) return
+        val d = sqrt(d2)
+        if (d < 1e-4f) { nx = t.dropX; ny = t.dropY } else { nx /= d; ny /= d }
+        x = px + nx * r
+        y = py + ny * r
+        touchedWall = true
+        val vn = vx * nx + vy * ny
+        if (vn < 0f) {
+            bounce(nx, ny, vn, LEDGE_E)
+            if (-vn > 6f) ev.onWall(x, y, -vn, false)
+        }
+    }
+
     /** Corals, buoys, crabs and barrels: round bodies. */
     private fun collideBodies(ev: PhysicsEvents, height: Float) {
         if (height < CORAL_H) circles(hole.corals, Hole.CORAL_R) { nx, ny, vn ->
@@ -555,6 +690,38 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         if (height < CRAB_H) for (c in hole.crabs.indices) circle(state.crabX(c), state.crabY(c), Hole.CRAB_R) { nx, ny, vn ->
             bounce(nx, ny, vn, CRAB_E)
             if (-vn > 6f) ev.onWall(x, y, -vn, false)
+        }
+        if (height < MILL_H) for (m in hole.windmills) {
+            circle(m.hubX, m.hubY, MILL_HUB_R) { nx, ny, vn -> bounce(nx, ny, vn, 0.5f); if (-vn > 6f) ev.onWall(x, y, -vn, true) }
+            // Each blade sweeps round the hub: bounce off it, taking on the blade's own speed.
+            val a0 = m.angle(shotTime)
+            for (k in 0 until m.blades) {
+                val a = a0 + k * (2f * Math.PI.toFloat() / m.blades)
+                val ex = m.hubX + cos(a) * m.length
+                val ey = m.hubY + sin(a) * m.length
+                val sx = ex - m.hubX
+                val sy = ey - m.hubY
+                val t = (((x - m.hubX) * sx + (y - m.hubY) * sy) / (sx * sx + sy * sy)).coerceIn(0f, 1f)
+                val px = m.hubX + sx * t
+                val py = m.hubY + sy * t
+                val dx = x - px
+                val dy = y - py
+                val rr = BALL_R + MILL_BLADE_R
+                val d2 = dx * dx + dy * dy
+                if (d2 >= rr * rr || d2 < 1e-6f) continue
+                val d = sqrt(d2)
+                val nx = dx / d
+                val ny = dy / d
+                x = px + nx * rr; y = py + ny * rr
+                touchedWall = true
+                val bvx = -m.omega * (py - m.hubY)
+                val bvy = m.omega * (px - m.hubX)
+                val rvn = (vx - bvx) * nx + (vy - bvy) * ny
+                if (rvn < 0f) {
+                    vx -= (1f + MILL_E) * rvn * nx; vy -= (1f + MILL_E) * rvn * ny
+                    if (-rvn > 6f) ev.onWall(x, y, -rvn, true)
+                }
+            }
         }
         if (height < BARREL_H) for (b in state.bx.indices) {
             if (state.sunk[b]) continue
@@ -650,6 +817,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             val tt = hole.tile(tx, ty)
             if (!tt.solid || tt == Tile.WOOD || hole.rails.isBoulder(tx, ty)) continue
             if (tt == Tile.PLANK && st.plankBroken(tx, ty)) continue
+            if (tt == Tile.GATE && st.gateOpen(tx, ty)) continue
             val left = (tx * TILE).toFloat()
             val top = (ty * TILE).toFloat()
             val px = min(max(st.bx[i], left), left + TILE)
@@ -728,7 +896,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         state.advance(x, y)
         val coast = state.coast
         // Only water moves the ball (resting against a barrel or buoy is fine).
-        if (coast.waterDepth(x, y) <= 0f) return false
+        if (coast.waterDepth(x, y) <= 0f && !nearOpenIce(x, y)) return false
         // Search outward for dry, clear ground, as far as it takes.
         var r = 1f
         val far = hypot(hole.pxW.toFloat(), hole.pxH.toFloat())
@@ -743,7 +911,8 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
                 val py = y + sin(a) * r
                 val t = hole.at(px, py)
                 val dry = coast.landDepth(px, py)
-                if (dry >= BALL_R + 1f && !t.solid && !t.isRamp && !t.flows && clearOfPosts(px, py) && dry > best) { best = dry; bx = px; by = py }
+                if (dry >= BALL_R + 1f && !t.solid && !t.isRamp && !t.flows && !t.vent && !t.isLedge && !nearOpenIce(px, py) &&
+                    !(t == Tile.GATE && !state.gateOpen(floor(px / TILE).toInt(), floor(py / TILE).toInt())) && clearOfPosts(px, py) && dry > best) { best = dry; bx = px; by = py }
             }
             if (best > 0f) { placeAt(bx, by); return true }
             r += 1f
@@ -761,8 +930,8 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
     /** Copies position and rest state from [o] (for the planner and aim preview). */
     fun copyFrom(o: Physics) {
         x = o.x; y = o.y; vx = o.vx; vy = o.vy; restX = o.restX; restY = o.restY; z = o.z; vz = o.vz
-        moving = o.moving; inCup = o.inCup; lipped = false; shotTime = 0f; lastTile = hole.at(x, y)
-        ballStill = o.ballStill; kicks = o.kicks
+        moving = o.moving; inCup = o.inCup; lipped = false; shotTime = o.shotTime; lastTile = hole.at(x, y)
+        ballStill = o.ballStill; kicks = o.kicks; ventFrom = o.ventFrom
         if (state !== o.state) state.copyFrom(o.state)
     }
 
@@ -836,6 +1005,22 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         const val BARREL_E = 0.5f
         const val BARREL_C = 60f
         const val BARREL_H = 7f
+        /** Vents: the hop's lift, and the least speed they send a ball on with. */
+        const val VENT_LIFT = 170f
+        const val VENT_MIN_V = 70f
+        /** Snow keeps this much of a ball's pace. */
+        const val SNOW_PLUG = 0.1f
+        /** A tunnel sends the ball out at least this fast. */
+        const val TUNNEL_MIN = 50f
+        /** A ledge's lip tips the ball over this hard; its cliff bounces like this. */
+        const val LEDGE_G = 300f
+        const val LEDGE_E = 0.5f
+        /** The wind on a ridge (less than the fairway's grip, so a ball can still stop there). */
+        const val WIND_G = 30f
+        const val MILL_HUB_R = 3f
+        const val MILL_BLADE_R = 1.5f
+        const val MILL_E = 0.5f
+        const val MILL_H = 12f
 
         /** The softest tap still rolls the ball a few pixels. */
         const val MIN_SPEED = 22f

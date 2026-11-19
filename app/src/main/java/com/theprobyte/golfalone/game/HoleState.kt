@@ -19,6 +19,11 @@ class HoleState(val hole: Hole) {
     val bvy = FloatArray(hole.barrels.size / 2)
     val sunk = BooleanArray(hole.barrels.size / 2)
     val crabStep = IntArray(hole.crabs.size)
+    /** Thin ice: cracked this shot (it opens after it), and open water. */
+    val cracked = BooleanArray(hole.thinCount)
+    val thinOpen = BooleanArray(hole.thinCount)
+    /** Gate groups 'G' and 'J': open once their plate is pressed. */
+    val gates = BooleanArray(2)
 
     init { reset() }
 
@@ -28,6 +33,7 @@ class HoleState(val hole: Hole) {
         for (i in bx.indices) { bx[i] = hole.barrels[2 * i]; by[i] = hole.barrels[2 * i + 1] }
         bvx.fill(0f); bvy.fill(0f); sunk.fill(false)
         crabStep.fill(0)
+        cracked.fill(false); thinOpen.fill(false); gates.fill(false)
     }
 
     fun copyFrom(o: HoleState) {
@@ -35,7 +41,15 @@ class HoleState(val hole: Hole) {
         o.broken.copyInto(broken)
         o.bx.copyInto(bx); o.by.copyInto(by); o.bvx.copyInto(bvx); o.bvy.copyInto(bvy); o.sunk.copyInto(sunk)
         o.crabStep.copyInto(crabStep)
+        o.cracked.copyInto(cracked); o.thinOpen.copyInto(thinOpen); o.gates.copyInto(gates)
     }
+
+    /** Whether the thin ice at this tile has opened to water. */
+    fun thinOpenAt(tx: Int, ty: Int): Boolean { val k = hole.thinAt(tx, ty); return k >= 0 && thinOpen[k] }
+    fun thinOpenAt(x: Float, y: Float): Boolean = thinOpenAt(kotlin.math.floor(x / TILE).toInt(), kotlin.math.floor(y / TILE).toInt())
+
+    /** Whether the gate at this tile is open. */
+    fun gateOpen(tx: Int, ty: Int): Boolean { val g = hole.plateAt(tx, ty); return g >= 0 && gates[g] }
 
     /** High tide now (during the next shot), and after it. */
     val high: Boolean get() = hole.tidal && Tide.high(hole.tideStart + shots)
@@ -62,6 +76,8 @@ class HoleState(val hole: Hole) {
      */
     fun advance(ballX: Float, ballY: Float) {
         shots++
+        // Ice the ball cracked on this shot gives way now.
+        for (k in cracked.indices) if (cracked[k]) thinOpen[k] = true
         for (i in crabStep.indices) {
             val nx = crabNextX(i)
             val ny = crabNextY(i)
@@ -77,6 +93,8 @@ class HoleState(val hole: Hole) {
         for (b in broken) h = h * 31 + (if (b) 1 else 0)
         for (i in bx.indices) h = h * 131 + if (sunk[i]) 7 else ((bx[i] / 4).toInt() * 977 + (by[i] / 4).toInt())
         for (c in hole.crabs.indices) h = h * 37 + Math.floorMod(crabStep[c], hole.crabs[c].cycle)
+        for (k in cracked.indices) h = h * 3 + (if (thinOpen[k]) 2 else if (cracked[k]) 1 else 0)
+        for (g in gates) h = h * 5 + (if (g) 1 else 0)
         return h
     }
 
@@ -85,7 +103,10 @@ class HoleState(val hole: Hole) {
         append(shots).append(';')
         append(broken.joinToString("") { if (it) "1" else "0" }).append(';')
         append(bx.indices.joinToString(",") { if (sunk[it]) "s" else "${bx[it]}/${by[it]}" }).append(';')
-        append(crabStep.joinToString(","))
+        append(crabStep.joinToString(",")).append(';')
+        append(cracked.joinToString("") { if (it) "1" else "0" }).append(';')
+        append(thinOpen.joinToString("") { if (it) "1" else "0" }).append(';')
+        append(gates.joinToString("") { if (it) "1" else "0" })
     }
 
     fun decode(s: String) {
@@ -102,5 +123,10 @@ class HoleState(val hole: Hole) {
         }
         val cs = p[3].split(',')
         for (i in crabStep.indices) crabStep[i] = cs.getOrNull(i)?.toIntOrNull() ?: 0
+        if (p.size >= 7) {
+            for (i in cracked.indices) cracked[i] = p[4].getOrNull(i) == '1'
+            for (i in thinOpen.indices) thinOpen[i] = p[5].getOrNull(i) == '1'
+            for (i in gates.indices) gates[i] = p[6].getOrNull(i) == '1'
+        }
     }
 }

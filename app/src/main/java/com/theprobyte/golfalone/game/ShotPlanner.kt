@@ -33,14 +33,24 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
             val i = q.removeFirst()
             val x = i % hole.w
             val y = i / hole.w
+            val here = hole.tile(x, y)
             for ((nx, ny) in arrayOf(x + 1 to y, x - 1 to y, x to y + 1, x to y - 1)) {
                 if (nx !in 0 until hole.w || ny !in 0 until hole.h) continue
                 val t = hole.tile(nx, ny)
                 val j = ny * hole.w + nx
-                // Cracked planks can be smashed, so they're a way through.
-                if ((t.solid && t != Tile.PLANK) || t.water || (flooded && t == Tile.TIDAL) || d[j] != Int.MAX_VALUE) continue
+                // Cracked planks can be smashed and gates opened, so they're ways through.
+                if ((t.solid && t != Tile.PLANK && t != Tile.GATE) || t.water || (flooded && t == Tile.TIDAL) || d[j] != Int.MAX_VALUE) continue
+                // Ledges are one way: no climbing onto one from below, or off one uphill.
+                if (here.isLedge && nx == x + here.dropX.toInt() && ny == y + here.dropY.toInt()) continue
+                if (t.isLedge && x == nx - t.dropX.toInt() && y == ny - t.dropY.toInt()) continue
                 d[j] = d[i] + 1
                 q.add(j)
+            }
+            // A tunnel's way out is one step from its mouth.
+            if (here == Tile.TUNNEL_OUT) for (m in hole.tunnelOf.indices) {
+                if (hole.tunnelOf[m] < 0 || d[m] != Int.MAX_VALUE) continue
+                val k = hole.tunnelOf[m]
+                if (floor(hole.exitX[k] / TILE).toInt() == x && floor(hole.exitY[k] / TILE).toInt() == y) { d[m] = d[i] + 1; q.add(m) }
             }
         }
     }

@@ -1,7 +1,14 @@
 package com.theprobyte.golfalone.game
 
 /** A named set of holes played in order. */
-class Course(val id: String, val name: String, val holes: List<Hole>, val mood: com.theprobyte.golfalone.render.Mood = com.theprobyte.golfalone.render.Mood.DAY) {
+class Course(
+    val id: String,
+    val name: String,
+    val holes: List<Hole>,
+    val mood: com.theprobyte.golfalone.render.Mood = com.theprobyte.golfalone.render.Mood.DAY,
+    style: String = "",
+) {
+    init { for (h in holes) h.style = style }
     val par get() = holes.sumOf { it.par }
 }
 
