@@ -21,7 +21,7 @@
 1. ✅ **Art slice (checked on your phone):** the chosen water and palm (A1, A2, A5) on holes 1 and 5,
    plus the draw-time readout (Q6). Nothing else is converted until you've seen it on the phone.
 2. ✅ **The rest of the art pass**, plus your feedback: calmer deep water, and walls and logs that join diagonally: ponds, banks, boulders, decoration, driftwood and effects (A3, A4, A6–A9).
-3. 🔶 **QoL batch** (Q1, Q2 and Q4 done; Q3 sliders and Q5 tips left): what you found annoying, then Q1–Q5.
+3. 🔶 **QoL batch** (Q1–Q4 done; Q5 tips dropped): what you found annoying, then Q1–Q5.
 4. 🔶 **Airborne ball (F1) and ramps (F2) are done.** The loft shot (F3) waits on one question: how should you choose a loft?
 4½. **Polish pass** ([POLISH_PASS_PLAN.md](POLISH_PASS_PLAN.md)): efficiency, beauty, fun and QoL,
    with no rule changes. **Done:** dawn on Driftwood Cove, the idle throttle, ambient life, the

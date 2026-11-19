@@ -6,8 +6,6 @@ import com.theprobyte.golfalone.GameView.Companion.CHIP
 import com.theprobyte.golfalone.GameView.Companion.NONE
 import com.theprobyte.golfalone.GameView.Sheet
 import com.theprobyte.golfalone.game.Hole
-import com.theprobyte.golfalone.game.TILE
-import com.theprobyte.golfalone.game.Tile
 import com.theprobyte.golfalone.render.Palette
 import com.theprobyte.golfalone.render.Pix
 import com.theprobyte.golfalone.render.Pix.px
@@ -20,7 +18,7 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-// The play screen: the HUD strip, hole banner, rubber band, pause chip, hints and one-time tips.
+// The play screen: the HUD strip, hole banner, rubber band, pause chip, and hints.
 // Part of [GameView], split out by screen; these read and draw its state.
 
 internal fun GameView.drawHud(c: Canvas) {
@@ -106,25 +104,6 @@ internal fun GameView.drawPlayUi(c: Canvas) {
     PixelFont.drawCentered(c, hint.first, lw / 2, hy, Palette.alpha(col, a), 1, Palette.alpha(Palette.INK_SHADOW, a), Face.BIG)
 }
 
-/** Whether the ball rests within 3 tiles of [key]'s feature. */
-internal fun GameView.nearFeature(key: String): Boolean {
-    val tx = floor(physics.x / TILE).toInt()
-    val ty = floor(physics.y / TILE).toInt()
-    for (dy in -3..3) for (dx in -3..3) {
-        val t = hole.tile(tx + dx, ty + dy)
-        val hit = when (key) {
-            "ramp" -> t.isRamp
-            "sand" -> t == Tile.SAND
-            "slope" -> t.slopeX != 0f || t.slopeY != 0f
-            "wood" -> t == Tile.WOOD
-            "pond" -> t.water && terrain.isPond((tx + dx + 0.5f) * TILE, (ty + dy + 0.5f) * TILE)
-            else -> false
-        }
-        if (hit) return true
-    }
-    return false
-}
-
 /** The hint line in play, if any: (text, pulsing). */
 internal fun GameView.playHint(): Pair<String, Boolean>? {
     if (sheet != Sheet.NONE) return null
@@ -133,10 +112,6 @@ internal fun GameView.playHint(): Pair<String, Boolean>? {
     if (flyover && holeT > 0.4f) return "TAP TO SKIP" to false
     if (progress.best(0) == 0 && holeIndex == 0 && strokes == 0 && !physics.moving && holeT > 1f) {
         return (if (aiming) (if (power > 0f) "LET GO TO SHOOT" else "PULL BACK TO AIM") else "PULL BACK ANYWHERE TO AIM") to true
-    }
-    if (!aiming && !physics.moving && sinkT < 0f && holeT > 2.6f) {
-        tipKey?.let { k -> return tips.first { it.first == k }.second to true }
-        for ((k, text) in tips) if (!progress.tipSeen(k) && nearFeature(k)) { tipKey = k; tipShownT = 0f; return text to true }
     }
     if (isLong() && strokes == 0 && !aiming && !physics.moving && holeT > 2.6f) return "HOLD STILL TO PEEK" to true
     return null

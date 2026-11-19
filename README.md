@@ -30,7 +30,6 @@ to shoot, and play a quiet island course alone.
   - Settings: effects and surf volume sliders, vibration, left-handed, reduce motion,
     status bar (hidden in play by default) and pull length (short, normal, long).
   - In practice, hold the pause chip to restart the hole at once.
-  - One-time tips for ramps, sand, slopes, driftwood and ponds, shown near the feature.
 - **The Book** (on the title): your stats (rounds, aces, eagles, birdies, pars, jumps, longest
   shot, best and average per hole) and a postcard of every hole you've beaten par on.
 - **While playing:** the top strip is information only.

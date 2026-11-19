@@ -813,7 +813,6 @@ class GameView(
     }
 
     override fun onLaunch(x: Float, y: Float, speed: Float) {
-        progress.markTip("ramp")
         progress.recordJump()
         sfx.launch(speed, pan(x))
         haptics.tap(this)
@@ -945,10 +944,6 @@ class GameView(
         val live = mode == Mode.PLAY && sheet == Sheet.NONE
         if (live && fadeT < 0f && glideT < 0f) holeT += dt
         if (flyover && holeT > 1.6f) flyover = false
-        tipKey?.let { k ->
-            tipShownT += dt
-            if (tipShownT > 4f || physics.moving) { progress.markTip(k); tipKey = null }
-        }
 
         // Hold still to peek at the green.
         if (aiming && isLong() && !aimMoved && !peeking && power <= 0f && time - aimStartT > PEEK_HOLD) {
@@ -1288,16 +1283,6 @@ class GameView(
     internal var hudParText = ""
     internal var hudShotsText = ""
 
-    /** One-time tips: (key, text), shown once when the ball rests near the feature. */
-    internal val tips = listOf(
-        "ramp" to "ROLL UP A RAMP FAST TO JUMP",
-        "sand" to "SAND SLOWS THE BALL DOWN",
-        "slope" to "GREEN SLOPES PULL THE BALL",
-        "wood" to "DRIFTWOOD BOUNCES HARD",
-        "pond" to "PONDS ARE WATER HAZARDS",
-    )
-    internal var tipShownT = 0f
-    internal var tipKey: String? = null
 
     /** In hole select, the preview takes horizontal swipes from the edges too (Android allows 200 dp). */
     internal fun updateGestureExclusion() {

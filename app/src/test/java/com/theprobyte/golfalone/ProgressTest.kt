@@ -18,14 +18,13 @@ class ProgressTest {
     @Test fun oldSavesMoveToTheCourseOnce() {
         prefs.edit().clear().putInt("best_0", 3).putInt("best_2", 5).putInt("course_DRIFTWOOD COVE", 24)
             .putInt("run_hole", 2).putString("run_scores", "3,4,0").putInt("run_strokes", 1)
-            .putFloat("run_ball_x", 10f).putFloat("run_ball_y", 20f).putBoolean("seen_ramp_tip", true).commit()
+            .putFloat("run_ball_x", 10f).putFloat("run_ball_y", 20f).commit()
         val p = Progress(ctx)
         assertEquals(3, p.best(0)); assertEquals(0, p.best(1)); assertEquals(5, p.best(2))
         assertEquals(24, p.courseBest())
         assertEquals(2, p.runHole)
         assertEquals(listOf(3, 4, 0), p.runScores(3).toList())
         assertEquals(1, p.runStrokes); assertEquals(10f, p.runBallX); assertEquals(20f, p.runBallY)
-        assertTrue(p.tipSeen("ramp"))
         // A second load doesn't copy old keys over newer records.
         p.record(0, 2)
         prefs.edit().putInt("best_0", 9).commit()

@@ -30,7 +30,6 @@ class Progress(context: Context, private val course: String = "cove") {
             e.putFloat("run_cove_ball_x", prefs.getFloat("run_ball_x", 0f))
             e.putFloat("run_cove_ball_y", prefs.getFloat("run_ball_y", 0f))
         }
-        if (prefs.getBoolean("seen_ramp_tip", false)) e.putBoolean("tip_ramp", true)
         e.putBoolean("save_v2", true).apply()
     }
 
@@ -144,11 +143,6 @@ class Progress(context: Context, private val course: String = "cove") {
     var surfVolume: Float
         get() = prefs.getFloat("surf_volume", if (prefs.getBoolean("sound", true)) 0.7f else 0f)
         set(v) = prefs.edit().putFloat("surf_volume", v.coerceIn(0f, 1f)).apply()
-
-    /** One-time tips (ramp, sand, slope, wood, pond) that have done their job. */
-    fun tipSeen(key: String): Boolean = prefs.getBoolean("tip_$key", false)
-
-    fun markTip(key: String) = prefs.edit().putBoolean("tip_$key", true).apply()
 
     var debugOverlay: Boolean
         get() = prefs.getBoolean("debug_overlay", false)

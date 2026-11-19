@@ -1,6 +1,6 @@
 # Golf Alone: polish pass (efficiency, beauty, fun, QoL)
 
-> **Status: built.** Every item below is in the game (E1–E5, B1–B5, F1–F4, Q3, Q5, Q7–Q9).
+> **Status: built.** Every item below is in the game (E1–E5, B1–B5, F1–F4, Q3, Q7–Q9; Q5 tips were tried, then removed).
 > No rule changes: `GoldenShotsTest` and the planner's best scores are unchanged.
 > Picks used: Driftwood Cove is at **dawn**; the status bar **hides during play** and comes back in menus.
 >
@@ -57,7 +57,7 @@ Rows say **evidence** when measured or seen, and **guess** when it's a bet.
 | # | Item | Why |
 |---|---|---|
 | Q3 | **Volume sliders** for effects and surf (carried over). | **Evidence:** they're toggles today. |
-| Q5 | **First-time tips** for sand, slopes, logs and ponds, one line each, shown once near the feature (like the ramp tip). | **Evidence:** only ramps have one. |
+| ~~Q5~~ | ~~**First-time tips** for sand, slopes, logs and ponds.~~ **Removed at your request**, along with the ramp tip: the course should speak for itself. The pull-back hint on hole 1 and the peek hint on long holes stay. | Your call. |
 | Q7 | **Drag sensitivity** (short, normal, long pull), for small or large hands. | **Guess.** |
 | Q8 | **A quick retry in practice:** a long press on the pause chip restarts the hole. | **Guess.** |
 | Q9 | **Hide the status bar** (full-screen play). See decision 2. | **Evidence:** your screenshot shows the clock and icons over the course. |
