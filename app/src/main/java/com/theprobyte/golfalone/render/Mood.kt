@@ -10,7 +10,13 @@ enum class Mood(val hi: Int, val lo: Int, val amtHi: Float, val amtLo: Float) {
     /** First light: peach highlights, lilac shade. */
     DAWN(0xFFFFC8CE.toInt(), 0xFF46347A.toInt(), 0.16f, 0.24f),
     /** Golden hour: amber light, teal shade. */
-    GOLDEN(0xFFFFCD78.toInt(), 0xFF1C3E60.toInt(), 0.18f, 0.22f);
+    GOLDEN(0xFFFFCD78.toInt(), 0xFF1C3E60.toInt(), 0.18f, 0.22f),
+    /** Moonlight: cool, dimmer, deep blue shade (lanterns carry the warmth). */
+    NIGHT(0xFF9FB4E6.toInt(), 0xFF0A1030.toInt(), 0.15f, 0.5f),
+    /** Tropical noon: bright, clean light and teal shade. */
+    NOON(0xFFFFFFE8.toInt(), 0xFF1E6A9A.toInt(), 0.12f, 0.15f),
+    /** A storm: grey-green light and slate shade. */
+    STORM(0xFFB8C4C0.toInt(), 0xFF1E2A30.toInt(), 0.22f, 0.32f);
 
     /** One colour through this mood: weighted by its brightness towards [hi], or towards [lo]. */
     fun grade(c: Int): Int {

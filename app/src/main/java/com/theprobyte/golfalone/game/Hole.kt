@@ -114,6 +114,9 @@ class Hole(
     /** The tide's phase before the first shot (see [Tide]). */
     val tideStart: Int = 0,
     val crabs: List<Crab> = emptyList(),
+    /** Scenery only: a lighthouse (its tile is drawn as the tower) and lantern posts, as tiles. */
+    val lighthouse: Pair<Int, Int>? = null,
+    val lanterns: List<Pair<Int, Int>> = emptyList(),
 ) {
     val w: Int = rows.first().length
     val h: Int = rows.size
@@ -241,10 +244,10 @@ class Hole(
     }
 
     /** The same hole with its ramps paved over (to prove par doesn't depend on them). */
-    fun withoutRamps(): Hole = Hole(name, par, rows.map { r -> r.map { if (it in "NESW") '.' else it }.joinToString("") }, tideStart, crabs)
+    fun withoutRamps(): Hole = Hole(name, par, rows.map { r -> r.map { if (it in "NESW") '.' else it }.joinToString("") }, tideStart, crabs, lighthouse, lanterns)
 
     /** The same hole with the tide always in (to prove par doesn't depend on timing it). */
-    fun withoutTide(): Hole = Hole(name, par, rows.map { r -> r.map { if (it == 't') '~' else it }.joinToString("") }, tideStart, crabs)
+    fun withoutTide(): Hole = Hole(name, par, rows.map { r -> r.map { if (it == 't') '~' else it }.joinToString("") }, tideStart, crabs, lighthouse, lanterns)
 
     /** Whether a tile index is a plank (any state). */
     fun plankAt(tx: Int, ty: Int): Int = if (tx < 0 || ty < 0 || tx >= w || ty >= h) -1 else plankOf[ty * w + tx]

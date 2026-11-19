@@ -5,10 +5,12 @@ import com.theprobyte.golfalone.GameView.Companion.GULL_SPEED
 import com.theprobyte.golfalone.GameView.Companion.NONE
 import com.theprobyte.golfalone.GameView.Companion.TEE_MARKS
 import com.theprobyte.golfalone.GameView.Companion.TIDE_S
+import com.theprobyte.golfalone.GameView.Companion.CRAB_STEP_S
 import com.theprobyte.golfalone.GameView.Companion.WATER_FPS
 import com.theprobyte.golfalone.GameView.Mode
 import com.theprobyte.golfalone.GameView.Sheet
 import com.theprobyte.golfalone.game.TILE
+import com.theprobyte.golfalone.render.Bodies
 import com.theprobyte.golfalone.render.Palette
 import com.theprobyte.golfalone.render.Pix
 import com.theprobyte.golfalone.render.Pix.px
@@ -102,6 +104,11 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
         k += 2
     }
 
+    // Buoys, coral, crabs, barrels and cracked planks.
+    val crabK = if (crabMoveT < 0f || reduceMotion) 1f else min(1f, crabMoveT / CRAB_STEP_S)
+    Bodies.draw(c, hole, holeState, ix, iy, steppedTime, crabFromX, crabFromY, crabK,
+        mode == Mode.PLAY && !physics.moving && sinkT < 0f, bumpX, bumpY, bumpT)
+
     ambient.draw(c, ix, iy, time, physics.x, physics.y, physics.moving, reduceMotion)
 
     // Trail, coloured by the shot's power.
@@ -163,6 +170,9 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
         Sprites.gull(c, gx + 2 + lift / 2, gy + 3 + lift, flap, Palette.alpha(Palette.INK_SHADOW, 60))
         Sprites.gull(c, gx, gy, flap, Palette.INK)
     }
+
+    // Lanterns and the lighthouse (with its beam) stand over everything.
+    Bodies.scenery(c, hole, ix, iy, steppedTime, reduceMotion)
 
     // Cloud shadows drift over everything on the ground.
     for (i in clouds.indices) {

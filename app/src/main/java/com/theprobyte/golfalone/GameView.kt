@@ -210,6 +210,10 @@ class GameView(
     internal var tideT = -1f
     /** The last buoy hit: when (-1: none) and where, for its wobble. */
     internal var bumpT = -1f
+    /** Crabs walk from here to their new tile after each shot ([crabMoveT] since they set off). */
+    internal var crabFromX = FloatArray(0)
+    internal var crabFromY = FloatArray(0)
+    internal var crabMoveT = -1f
     internal var bumpX = 0f
     internal var bumpY = 0f
     /** Bumped on any input or state change the UI layer shows; see [uiNeedsRedraw]. */
@@ -354,6 +358,9 @@ class GameView(
         scratch = Physics(hole, HoleState(hole))
         terrain = terrains[i].get()
         ambient.reset(terrain)
+        crabFromX = FloatArray(hole.crabs.size) { holeState.crabX(it) }
+        crabFromY = FloatArray(hole.crabs.size) { holeState.crabY(it) }
+        crabMoveT = -1f
         spriteFx.clear()
         celebrateT = -1f; punchT = -1f; slowMo = false; slowChecked = false; shotLive = false
         // Keep water for this hole and the next one shown (the title drifts round to hole 1).
@@ -608,7 +615,12 @@ class GameView(
     internal fun shotOver() {
         if (physics.inCup) return
         val wasHigh = holeState.high
+        for (i in crabFromX.indices) { crabFromX[i] = holeState.crabX(i); crabFromY[i] = holeState.crabY(i) }
         if (physics.endShot()) say("LIFTED CLEAR", physics.x, physics.y - 8f, Palette.INK)
+        if (crabFromX.indices.any { crabFromX[it] != holeState.crabX(it) || crabFromY[it] != holeState.crabY(it) }) {
+            crabMoveT = 0f
+            sfx.scuttle(0f)
+        }
         if (holeState.high != wasHigh) onTideTurn(holeState.high)
         uiVersion++
     }
@@ -1126,6 +1138,7 @@ class GameView(
         if (punchT >= 0f) { punchT += dt; if (punchT > PUNCH_S) punchT = -1f }
         if (tideT >= 0f) { tideT += dt; if (tideT > TIDE_S) tideT = -1f }
         if (bumpT >= 0f) { bumpT += dt; if (bumpT > 0.3f) bumpT = -1f }
+        if (crabMoveT >= 0f) { crabMoveT += dt; if (crabMoveT > CRAB_STEP_S) crabMoveT = -1f }
         spriteFx.update(dt)
         if (popT >= 0f) { popT += dt; if (popT > 0.5f) popT = -1f }
         if (teeterT >= 0f) { teeterT += dt; if (teeterT > 0.6f) teeterT = -1f }
@@ -1251,7 +1264,7 @@ class GameView(
     /** What's moving right now, for [RedrawPolicy]. */
     internal fun redrawState(): RedrawPolicy.State {
         var effects = msg != null || popT >= 0f || shakeT >= 0f || teeterT >= 0f || peeking || celebrateT >= 0f ||
-            punchT >= 0f || spriteFx.active || ambient.busy(time) || tideT >= 0f || bumpT >= 0f
+            punchT >= 0f || spriteFx.active || ambient.busy(time) || tideT >= 0f || bumpT >= 0f || crabMoveT >= 0f
         if (!effects) for (i in 0 until pn) if (pLife[i] > 0f) { effects = true; break }
         if (!effects) for (i in 0 until rn) if (rT[i] >= 0f) { effects = true; break }
         return RedrawPolicy.State(
@@ -1556,6 +1569,8 @@ class GameView(
         const val SO_CLOSE = 7f
         /** How long the map takes to crossfade when the tide turns (s). */
         const val TIDE_S = 0.8f
+        /** How long a crab takes to walk to its next tile (s). */
+        const val CRAB_STEP_S = 0.45f
         /** Practice: holding the pause chip this long restarts the hole. */
         const val RESTART_HOLD = 0.6f
     }

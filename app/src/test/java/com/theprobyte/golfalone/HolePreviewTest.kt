@@ -41,6 +41,10 @@ class HolePreviewTest {
                     val p = Paint().apply { isFilterBitmap = false }
                     c.drawBitmap(t.ground, 0f, 0f, p)
                     c.drawBitmap(t.water(0), 0f, 0f, p)
+                    val st = com.theprobyte.golfalone.game.HoleState(hole)
+                    com.theprobyte.golfalone.render.Bodies.draw(c, hole, st, 0, 0, 0f,
+                        FloatArray(hole.crabs.size) { st.crabX(it) }, FloatArray(hole.crabs.size) { st.crabY(it) }, 1f, true, 0f, 0f, -1f)
+                    com.theprobyte.golfalone.render.Bodies.scenery(c, hole, 0, 0, 0f, false)
                     val tag = if (t === base) "" else "-high"
                     FileOutputStream(File(dir, "${course.id}-${i + 1}$tag.png")).use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 }
