@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="27" android:viewportHeight="27">
+    <!-- pixel-art flag on a green, inside the 18x18 safe zone -->
+    <path android:fillColor="#5FB85C" android:pathData="M6,17h15v3h-15z M8,16h11v1h-11z M8,20h11v1h-11z" />
+    <path android:fillColor="#1D2B22" android:pathData="M12,17h3v2h-3z" />
+    <path android:fillColor="#F2EBD9" android:pathData="M13,6h1v12h-1z" />
+    <path android:fillColor="#E8483E" android:pathData="M14,6h4v1h-4z M14,7h5v1h-5z M14,8h4v1h-4z M14,9h2v1h-2z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M8,18h2v2h-2z" />
+</vector>

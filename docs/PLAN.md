@@ -1,6 +1,6 @@
 # Golf Alone: game plan
 
-> **Status:** plan only, nothing built yet. Strike or reorder any row before work starts.
+> **Status:** M0 and M1 done: the scaffold and one playable hole (Driftwood Cove 1). Next up is M2.
 > The IDs (A1, C3, …) are there so you can say "drop C4, move E2 into v1".
 
 A top-down, 2D pixel-art golf game for Android (built and tested for a Pixel), installed as
