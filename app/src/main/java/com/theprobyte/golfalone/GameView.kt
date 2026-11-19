@@ -357,6 +357,14 @@ class GameView(
         for (i in 0 until n) scores[i] = saved[i]
         courseNewBest = false
         loadHole(progress.runHole.coerceIn(0, n - 1))
+        // Pick the hole up where it was left: strokes and the ball's lie.
+        val held = progress.runStrokes
+        if (held > 0) {
+            strokes = held
+            physics.placeAt(progress.runBallX, progress.runBallY)
+            flyover = false
+            camSnap = true
+        }
         setMode(Mode.PLAY)
     }
 
@@ -379,7 +387,7 @@ class GameView(
         setMode(Mode.SELECT)
     }
 
-    private val hasSavedRound get() = progress.runHole in 1 until n
+    private val hasSavedRound get() = progress.runHole in 0 until n && (progress.runHole > 0 || progress.runStrokes > 0)
 
     /** System back: close a sheet, pause a hole, or step back towards the title. */
     fun onBack(): Boolean {
@@ -395,8 +403,15 @@ class GameView(
         return true
     }
 
-    /** The app went to the background: pause any hole in progress. */
+    /** In a round, remember this hole's strokes and where the ball lies, so quitting is no free retry. */
+    private fun saveHoleInProgress() {
+        if (!courseRun || mode != Mode.PLAY || sinkT >= 0f) return
+        progress.saveRun(holeIndex, scores, strokes, physics.restX, physics.restY)
+    }
+
+    /** The app went to the background: pause any hole in progress and save the round. */
     fun onHostPause() {
+        saveHoleInProgress()
         if (mode == Mode.PLAY && sinkT < 0f && sheet == Sheet.NONE) openSheet(Sheet.PAUSE)
         aiming = false
         peeking = false
@@ -443,10 +458,10 @@ class GameView(
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 tapAnywhere = false; tapOutside = false; swipeX = Float.NaN; logoDownT = -1f
+                downX = e.x; downY = e.y
                 val id = hitButton(lx, ly)
                 if (id != NONE) {
                     pressedId = id; pressX = lx; pressY = ly
-                    downX = e.x; downY = e.y
                     haptics.tap(this)
                 } else if (sheet != Sheet.NONE) {
                     tapOutside = !sheetRect.contains(lx, ly)
@@ -465,12 +480,19 @@ class GameView(
                     pressedId = NONE
                     startAim(downX, downY, e.getPointerId(0))
                 }
-                if (aiming && !peeking) {
+                if (aiming) {
                     val i = e.findPointerIndex(aimPointer)
                     if (i >= 0) {
-                        curX = e.getX(i); curY = e.getY(i)
-                        if (hypot(curX - downX, curY - downY) > slopPx) aimMoved = true
-                        updatePower()
+                        val mx = e.getX(i)
+                        val my = e.getY(i)
+                        val d = hypot(mx - downX, my - downY)
+                        // Pulling past the cancel ring ends a peek and aims as usual.
+                        if (peeking && d > cancelPx) peeking = false
+                        if (!peeking) {
+                            curX = mx; curY = my
+                            if (d > slopPx) aimMoved = true
+                            updatePower()
+                        }
                     }
                 }
                 if (pressedId != NONE) { pressX = lx; pressY = ly }
@@ -539,7 +561,7 @@ class GameView(
             B_PAUSE -> openSheet(Sheet.PAUSE)
             B_RESUME -> closeSheet()
             B_RESTART -> { val i = holeIndex; fadeTo { loadHole(i); setMode(Mode.PLAY) } }
-            B_QUIT -> toTitle()
+            B_QUIT -> { saveHoleInProgress(); toTitle() }
             B_NEXT -> nextHole()
             B_RETRY -> practise(holeIndex)
             B_SELECT -> toSelect()
@@ -710,7 +732,7 @@ class GameView(
         if (flyover && holeT > 1.6f) flyover = false
 
         // Hold still to peek at the green.
-        if (aiming && !aimMoved && !peeking && power <= 0f && time - aimStartT > PEEK_HOLD) {
+        if (aiming && isLong() && !aimMoved && !peeking && power <= 0f && time - aimStartT > PEEK_HOLD) {
             peeking = true
             haptics.tap(this)
         }
@@ -771,6 +793,7 @@ class GameView(
         }
 
         updateCamera(dt)
+        updateGestureExclusion()
     }
 
     private val playTop get() = insetTop + HUD_H
@@ -1231,6 +1254,21 @@ class GameView(
         return t.thumbnail(step).also { thumbs[i] = it }
     }
 
+    /** In hole select, the preview takes horizontal swipes from the edges too (Android allows 200 dp). */
+    private fun updateGestureExclusion() {
+        if (Build.VERSION.SDK_INT < 29 || width == 0) return
+        val want = mode == Mode.SELECT && sheet == Sheet.NONE
+        if (want == excluding) return
+        excluding = want
+        systemGestureExclusionRects = if (want) {
+            val cy = height / 2
+            val half = (100 * density).toInt()
+            listOf(Rect(0, cy - half, width, cy + half))
+        } else emptyList()
+    }
+
+    private var excluding = false
+
     private fun drawSelect(c: Canvas) {
         rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 190))
         PixelFont.drawCentered(c, course.name, lw / 2, insetTop + 6, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
@@ -1459,6 +1497,8 @@ class GameView(
     internal val fading get() = fadeT >= 0f
     internal val isPaused get() = sheet == Sheet.PAUSE
     internal val isPeeking get() = peeking
+    internal val excludingGestures get() = excluding
+    internal val debugOverlayOn get() = progress.debugOverlay
     internal val selectedHole get() = sel
     internal val messageForTest get() = msg
     internal val dragRangePx get() = cancelPx to maxDragPx

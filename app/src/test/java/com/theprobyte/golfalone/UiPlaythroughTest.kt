@@ -63,9 +63,20 @@ class UiPlaythroughTest {
         game.dispatchTouchEvent(MotionEvent.obtain(now, now, action, x, y, 0))
     }
 
+    /** A real finger wiggles a pixel or two while it taps. */
     private fun tap(x: Float, y: Float) {
         touch(MotionEvent.ACTION_DOWN, x, y)
-        run(48)
+        run(24)
+        touch(MotionEvent.ACTION_MOVE, x + 2f, y + 1f)
+        run(24)
+        touch(MotionEvent.ACTION_UP, x + 2f, y + 1f)
+        run(32)
+    }
+
+    private fun longPress(x: Float, y: Float, ms: Long) {
+        touch(MotionEvent.ACTION_DOWN, x, y)
+        var t = 0L
+        while (t < ms) { touch(MotionEvent.ACTION_MOVE, x + (t / 100 % 2), y); run(50); t += 50 }
         touch(MotionEvent.ACTION_UP, x, y)
         run(32)
     }
@@ -78,14 +89,19 @@ class UiPlaythroughTest {
         runUntil(2000) { !game.fading }
     }
 
-    /** Pulls back from the middle of the screen, opposite to [angle], for [power]. */
-    private fun drag(angle: Float, power: Float, shotName: String? = null) {
+    /**
+     * Pulls back from the middle of the screen, opposite to [angle], for [power]. With
+     * [holdMs] the finger rests first, as a hesitant player's does; [expectPeek] asserts
+     * that the rest armed a peek (long holes only).
+     */
+    private fun drag(angle: Float, power: Float, shotName: String? = null, holdMs: Long = 0, expectPeek: Boolean? = null) {
         val (cancel, maxDrag) = game.dragRangePx
         val len = cancel + power * (maxDrag - cancel)
         val sx = game.width / 2f
         val sy = game.height * 0.55f
         touch(MotionEvent.ACTION_DOWN, sx, sy)
-        run(32)
+        run(32 + holdMs)
+        if (expectPeek != null) assertEquals("peeking after holding still", expectPeek, game.isPeeking)
         for (i in 1..8) {
             val f = i / 8f
             touch(MotionEvent.ACTION_MOVE, sx - cos(angle) * len * f, sy - sin(angle) * len * f)
@@ -101,14 +117,18 @@ class UiPlaythroughTest {
     }
 
     /** Plays the current hole out, re-planning from wherever the ball actually rests. */
-    private fun playHole(tag: String) {
+    private fun playHole(tag: String, firstHoldMs: Long = 0, expectPeek: Boolean? = null, maxShots: Int = 99) {
         val planner = ShotPlanner(game.hole)
         var shots = 0
-        while (!game.ballInCup) {
+        while (!game.ballInCup && shots < maxShots) {
             val plan = (1..4).firstNotNullOfOrNull { planner.solveFrom(game.ballX, game.ballY, it) }
             assertNotNull("${game.hole.name}: a way to the cup from ${game.ballX},${game.ballY}", plan)
             val s = plan!!.shots.first()
-            drag(s.angle, s.power, if (shots == 0) "$tag-aim" else null)
+            val before = game.strokesForTest
+            if (shots == 0 && firstHoldMs > 0) drag(s.angle, s.power, "$tag-aim", firstHoldMs, expectPeek)
+            else drag(s.angle, s.power, if (shots == 0) "$tag-aim" else null)
+            run(32)
+            assertEquals("${game.hole.name}: the pull-back shot", before + 1, game.strokesForTest)
             if (shots == 0) { run(300); frame("$tag-rolling") }
             waitForRest()
             shots++
@@ -148,6 +168,12 @@ class UiPlaythroughTest {
         println("logical ${lw}x$lh at ${scale}x for ${game.width}x${game.height}")
         assertEquals(GameView.Mode.TITLE, game.mode)
         frame("00-title")
+        // Long-press the logo: the frame-time readout comes on, and off again.
+        longPress(game.width / 2f, game.height * 0.15f, 1200)
+        assertTrue(game.debugOverlayOn)
+        frame("00-title-frametimes")
+        longPress(game.width / 2f, game.height * 0.15f, 1200)
+        assertFalse(game.debugOverlayOn)
         assertReachable(GameView.B_PLAY, 56f, 0.6f)
         assertReachable(GameView.B_HOLES, 48f, 0.6f)
 
@@ -164,6 +190,7 @@ class UiPlaythroughTest {
         press(GameView.B_HOLES)
         assertEquals(GameView.Mode.SELECT, game.mode)
         run(300)
+        assertTrue("edge swipes kept from system Back", game.excludingGestures)
         frame("02-select")
         press(GameView.B_NEXT_HOLE)
         press(GameView.B_NEXT_HOLE)
@@ -179,6 +206,7 @@ class UiPlaythroughTest {
         assertEquals(2, game.selectedHole)
         press(GameView.B_BACK)
         assertEquals(GameView.Mode.TITLE, game.mode)
+        assertFalse(game.excludingGestures)
 
         press(GameView.B_PLAY)
         assertEquals(GameView.Mode.PLAY, game.mode)
@@ -200,14 +228,13 @@ class UiPlaythroughTest {
             runUntil(3000) { !game.busy }
             frame("h${i + 1}-1-tee")
             if (i == 0) {
-                // Hold still to peek: no stroke. The pause chip opens a sheet without Restart in a round.
+                // Holding still on a short hole is just a cancelled touch: no peek, no stroke.
+                // The pause chip opens a sheet without Restart in a round.
                 touch(MotionEvent.ACTION_DOWN, game.width / 2f, game.height * 0.5f)
                 run(600)
-                assertTrue(game.isPeeking)
-                frame("h1-1-peek")
+                assertFalse(game.isPeeking)
                 touch(MotionEvent.ACTION_UP, game.width / 2f, game.height * 0.5f)
                 run(100)
-                assertFalse(game.isPeeking)
                 assertEquals(0, game.strokesForTest)
                 assertReachable(GameView.B_PAUSE, 48f, 0.75f)
                 press(GameView.B_PAUSE)
@@ -219,21 +246,33 @@ class UiPlaythroughTest {
                 press(GameView.B_RESUME)
                 assertFalse(game.isPaused)
             }
-            if (i == 3) {
-                // Save and quit mid-round, then continue from the title.
+            if (i == 4) {
+                // One shot in, Save + Quit, then Continue: same strokes, same lie. No free retry.
+                playHole("h5-2", maxShots = 1)
+                waitForRest()
+                val strokesBefore = game.strokesForTest
+                val bx = game.ballX
+                val by = game.ballY
                 press(GameView.B_PAUSE)
                 press(GameView.B_QUIT)
                 assertEquals(GameView.Mode.TITLE, game.mode)
                 run(300)
-                frame("h4-quit-title")
+                frame("h5-quit-title")
                 val before = game.scoresForTest
                 press(GameView.B_PLAY)
                 assertEquals(GameView.Mode.PLAY, game.mode)
-                assertEquals(3, game.holeIndex)
+                assertEquals(4, game.holeIndex)
                 assertEquals(before.toList(), game.scoresForTest.toList())
+                assertEquals(strokesBefore, game.strokesForTest)
+                assertEquals(bx, game.ballX, 0.01f)
+                assertEquals(by, game.ballY, 0.01f)
                 runUntil(3000) { !game.busy }
             }
-            playHole("h${i + 1}-2")
+            when (i) {
+                0 -> playHole("h1-2", firstHoldMs = 500, expectPeek = false) // a short hole never peeks
+                3 -> playHole("h4-2", firstHoldMs = 600, expectPeek = true) // peek, then pull: still a shot
+                else -> playHole("h${i + 1}-2")
+            }
             run(1200)
             assertEquals(GameView.Mode.CARD, game.mode)
             run(500)
@@ -300,6 +339,20 @@ class UiPlaythroughTest {
         assertEquals(3, game.strokesForTest)
         waitForRest()
 
+        // Left-handed moves the chip; reduce motion drops the flyover.
+        press(GameView.B_PAUSE)
+        press(GameView.B_SETTINGS)
+        press(GameView.B_LEFT)
+        press(GameView.B_MOTION)
+        run(300)
+        frame("95-settings-on")
+        press(GameView.B_DONE)
+        assertTrue(game.isPaused)
+        press(GameView.B_RESUME)
+        run(32)
+        assertTrue("chip on the left", game.buttonCenter(GameView.B_PAUSE)!!.first < game.width / 2f)
+        frame("96-left-handed")
+
         // Practice pause offers Restart; Back closes the sheet.
         press(GameView.B_PAUSE)
         assertNotNull(game.buttonCenter(GameView.B_RESTART))
@@ -308,6 +361,14 @@ class UiPlaythroughTest {
         press(GameView.B_PAUSE)
         press(GameView.B_QUIT)
         assertEquals(GameView.Mode.TITLE, game.mode)
+
+        // Tide Pools with reduce motion: straight to the tee, no flyover.
+        press(GameView.B_HOLES)
+        while (game.selectedHole < 3) press(GameView.B_NEXT_HOLE)
+        while (game.selectedHole > 3) press(GameView.B_PREV_HOLE)
+        press(GameView.B_PLAY_HOLE)
+        assertEquals(3, game.holeIndex)
+        assertFalse("no flyover with reduce motion", game.busy)
 
         assertTrue("labels that don't fit: ${game.textOverflows}", game.textOverflows.isEmpty())
     }

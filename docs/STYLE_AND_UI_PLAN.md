@@ -13,6 +13,14 @@
 >   and redrawing the UI layer only when it changes (part of E1; the glyph atlas is done).
 > - **E3 is unmeasured on a device.** Long-press the title logo for a second to show frame
 >   times (E2).
+> - **Peek (U5)** only arms on long holes, where the green is out of sight. On those, pulling
+>   past the cancel ring ends the peek and aims as usual, so a hesitant shot is never lost.
+> - **Quitting a round** (Save + Quit, or closing the app) saves the current hole's strokes and
+>   where the ball lies, so Continue picks up exactly there.
+> - **Holed to next shot (U7)** is about **1.7 s**, not the 1.2 s planned: 0.7 s sink, 0.35–0.4 s
+>   before the card takes input, then a 0.56 s fade.
+> - **The 3 px edge check (R5)** covers the coast, sand and greens, but leaves out the island
+>   banks. Banks are a deliberate 3 px cliff drawn over water.
 >
 > **Style board:** [`docs/style/style-board.png`](style/style-board.png) is 1080 px wide, so on a
 > Pixel one square is one game pixel at true size. The "today" crops are real 1:1 screenshots;

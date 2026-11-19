@@ -39,10 +39,17 @@ class Progress(context: Context) {
         return IntArray(n) { parts.getOrNull(it)?.toIntOrNull() ?: 0 }
     }
 
-    fun saveRun(nextHole: Int, scores: IntArray) =
-        prefs.edit().putInt("run_hole", nextHole).putString("run_scores", scores.joinToString(",")).apply()
+    /** Strokes already taken on [runHole] (0 = not started), and where the ball lies. */
+    val runStrokes: Int get() = prefs.getInt("run_strokes", 0)
+    val runBallX: Float get() = prefs.getFloat("run_ball_x", 0f)
+    val runBallY: Float get() = prefs.getFloat("run_ball_y", 0f)
 
-    fun clearRun() = prefs.edit().remove("run_hole").remove("run_scores").apply()
+    fun saveRun(hole: Int, scores: IntArray, strokes: Int = 0, ballX: Float = 0f, ballY: Float = 0f) =
+        prefs.edit().putInt("run_hole", hole).putString("run_scores", scores.joinToString(","))
+            .putInt("run_strokes", strokes).putFloat("run_ball_x", ballX).putFloat("run_ball_y", ballY).apply()
+
+    fun clearRun() = prefs.edit().remove("run_hole").remove("run_scores").remove("run_strokes")
+        .remove("run_ball_x").remove("run_ball_y").apply()
 
     var leftHanded: Boolean
         get() = prefs.getBoolean("left_handed", false)
