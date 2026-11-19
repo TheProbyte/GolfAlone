@@ -1,8 +1,8 @@
 # Golf Alone: game plan
 
 > **Status:** M0, M1 and M2 are done: the full six-hole Driftwood Cove is built (see
-> [POLISH_AND_COURSE_PLAN.md](POLISH_AND_COURSE_PLAN.md)). Next comes the style and UI pass in
-> [STYLE_AND_UI_PLAN.md](STYLE_AND_UI_PLAN.md), then M3, the tide.
+> [POLISH_AND_COURSE_PLAN.md](POLISH_AND_COURSE_PLAN.md)), and so is the style and UI pass in
+> [STYLE_AND_UI_PLAN.md](STYLE_AND_UI_PLAN.md). Next up is M3, the tide.
 > Where the build differs from this plan so far:
 > - D3: the holes are **not** yet one continuous island. Each hole is its own map, with a
 >   dissolve transition between them (and a flyover on long holes). The connected island is

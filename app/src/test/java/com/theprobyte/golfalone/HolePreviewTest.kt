@@ -20,10 +20,10 @@ import java.io.FileOutputStream
 class HolePreviewTest {
     @Test fun renderAllHoles() {
         for (hole in Holes.all) {
-            val m = Terrain(hole).coastMismatch()
-            println("${hole.name}: coast drawn as land on water up to ${m[0]} px, as water on land up to ${m[1]} px")
-            // The ball is 4 px across: keep the drawn coast within 3 px of the physics.
-            org.junit.Assert.assertTrue("${hole.name} coast strays ${m.toList()}", m[0] <= 3f && m[1] <= 3f)
+            val m = Terrain(hole).mismatch()
+            println("${hole.name}: drawn vs physics, deepest stray px: land ${m[0]}, water ${m[1]}, sand ${m[2]}, green ${m[3]}")
+            // Keep every drawn edge within 3 px of the tiles the physics uses.
+            org.junit.Assert.assertTrue("${hole.name} strays ${m.toList()}", m.all { it <= 3f })
         }
         val dir = System.getProperty("golfalone.shots")?.let { File(it, "holes").apply { mkdirs() } } ?: return
         val scale = 3

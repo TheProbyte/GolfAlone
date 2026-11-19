@@ -234,7 +234,7 @@ class Physics(val hole: Hole) {
     companion object {
         const val HZ = 240
         const val STEP = 1f / HZ
-        const val BALL_R = 2f
+        const val BALL_R = 2.5f
         const val CUP_R = 3f
         const val MAX_SPEED = 430f
         const val CAPTURE_SPEED = 150f

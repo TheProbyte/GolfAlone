@@ -18,8 +18,22 @@ to shoot, and play a quiet island course alone.
   - **The Saddle:** a ridge green with slopes falling away.
 - **Play modes:** play the full course, with a running score against par and a scorecard at the
   end, or practise any hole you've unlocked.
-- **Menus:** a pause menu, pixel buttons that press, hole cards and a course scorecard with flags.
-- **The world:** cloud shadows, flowers, shells, swaying palms, a rolling ball and dissolve transitions.
+- **Thumb-first menus:** every menu is a sheet of scorecard paper rising from the bottom, with
+  the main driftwood button lowest and biggest.
+  - Hole select is a swipe carousel.
+  - Tap anywhere after a hole to carry on.
+  - Rounds save after every hole, and the title offers Continue.
+  - Settings: sound, vibration, left-handed and reduce motion.
+- **While playing:** the top strip is information only.
+  - Pause is a chip in the bottom corner that fires only on a clean tap.
+  - Hold still to peek at the green.
+- **Pixel-art style** ([rules](docs/STYLE_AND_UI_PLAN.md)):
+  - a 3/4 view, with island banks and walls that show a front face
+  - hue-shifted colour ramps
+  - grass tufts and shells in clusters instead of noise
+  - soft offset shadows and a 6 px outlined ball
+  - a 5×7 pixel font
+  - cloud shadows, swaying palms and dissolve transitions
 - **Drag and pull back from anywhere.** Your thumb never covers the ball.
   - Power climbs with the drag, with a haptic tick and a click at every 10%.
   - Aim dots warm from white to gold to orange, and blink at full power.
@@ -67,5 +81,7 @@ to an app store.
 - `render/Terrain.kt`: per-pixel ground and the animated water overlays
 - `render/PixelFont.kt`, `render/Palette.kt`: the 3×5 font and colours
 - `GameView.kt`: the game loop, rendering, input, effects and every screen
-- `render/Sprites.kt`, `render/Pix.kt`: ball, flag, palms, clouds, icons and pixel drawing helpers
+- `render/Sprites.kt`: string-grid sprites (ball, flag, icons), palms and clouds
+- `render/Pix.kt`: pixel drawing helpers, paper, planks and dissolves
+- `docs/style/`: the style board, its script and the sprite contact sheet
 - `Sfx.kt`, `Haptics.kt`, `audio/`: sound and vibration

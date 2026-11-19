@@ -71,7 +71,7 @@ class UiPlaythroughTest {
     }
 
     private fun press(id: Int) {
-        run(32) // buttons register as they're drawn
+        run(320) // buttons register as they're drawn; let sheets finish sliding in
         val c = game.buttonCenter(id)
         assertNotNull("button $id is showing", c)
         tap(c!!.first, c.second)
@@ -116,6 +116,24 @@ class UiPlaythroughTest {
         }
     }
 
+    /** Thumb-first check: tall enough and in the lower part of the screen. */
+    private fun assertReachable(id: Int, minDp: Float, minTop: Float) {
+        run(32)
+        val m = game.buttonMetrics(id)
+        assertNotNull("button $id is showing", m)
+        assertTrue("button $id is ${m!!.first} dp tall", m.first >= minDp)
+        assertTrue("button $id starts ${(m.second * 100).toInt()}% down the screen", m.second >= minTop)
+    }
+
+    private fun swipe(dx: Float) {
+        val x = game.width / 2f
+        val y = game.height * 0.35f
+        touch(MotionEvent.ACTION_DOWN, x, y)
+        for (i in 1..6) { touch(MotionEvent.ACTION_MOVE, x + dx * i / 6f, y); run(16) }
+        touch(MotionEvent.ACTION_UP, x + dx, y)
+        run(300)
+    }
+
     @Test fun playTheCourse() {
         val act = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         game = act.game
@@ -130,15 +148,35 @@ class UiPlaythroughTest {
         println("logical ${lw}x$lh at ${scale}x for ${game.width}x${game.height}")
         assertEquals(GameView.Mode.TITLE, game.mode)
         frame("00-title")
+        assertReachable(GameView.B_PLAY, 56f, 0.6f)
+        assertReachable(GameView.B_HOLES, 48f, 0.6f)
 
-        // A new player's hole select: only hole 1 is open.
+        // Settings sheet.
+        press(GameView.B_SETTINGS)
+        assertEquals(GameView.Sheet.SETTINGS, game.sheet)
+        run(300)
+        frame("01-settings")
+        assertReachable(GameView.B_DONE, 56f, 0.6f)
+        press(GameView.B_DONE)
+        assertEquals(GameView.Sheet.NONE, game.sheet)
+
+        // A new player's hole select: only hole 1 is open. Arrows and swipes move the carousel.
         press(GameView.B_HOLES)
         assertEquals(GameView.Mode.SELECT, game.mode)
         run(300)
-        frame("01-select-locked")
-        press(GameView.B_HOLE0 + 2)
+        frame("02-select")
+        press(GameView.B_NEXT_HOLE)
+        press(GameView.B_NEXT_HOLE)
+        assertEquals(2, game.selectedHole)
+        run(300)
+        frame("03-select-locked")
+        press(GameView.B_PLAY_HOLE)
         assertEquals(GameView.Mode.SELECT, game.mode)
         assertEquals("FINISH HOLE 2 TO UNLOCK", game.messageForTest)
+        swipe(-400f)
+        assertEquals(3, game.selectedHole)
+        swipe(400f)
+        assertEquals(2, game.selectedHole)
         press(GameView.B_BACK)
         assertEquals(GameView.Mode.TITLE, game.mode)
 
@@ -161,17 +199,53 @@ class UiPlaythroughTest {
             frame("h${i + 1}-0-banner")
             runUntil(3000) { !game.busy }
             frame("h${i + 1}-1-tee")
-            playHole("h${i + 1}-2")
-            run(1600)
-            assertEquals(GameView.Mode.CARD, game.mode)
-            run(400)
-            frame("h${i + 1}-3-card")
-            if (i == 0) { // Back on a card doesn't throw the round away.
-                assertTrue(game.onBack())
-                assertEquals(GameView.Mode.CARD, game.mode)
+            if (i == 0) {
+                // Hold still to peek: no stroke. The pause chip opens a sheet without Restart in a round.
+                touch(MotionEvent.ACTION_DOWN, game.width / 2f, game.height * 0.5f)
+                run(600)
+                assertTrue(game.isPeeking)
+                frame("h1-1-peek")
+                touch(MotionEvent.ACTION_UP, game.width / 2f, game.height * 0.5f)
+                run(100)
+                assertFalse(game.isPeeking)
+                assertEquals(0, game.strokesForTest)
+                assertReachable(GameView.B_PAUSE, 48f, 0.75f)
+                press(GameView.B_PAUSE)
+                assertTrue(game.isPaused)
+                run(300)
+                frame("h1-1-pause")
+                assertEquals(null, game.buttonCenter(GameView.B_RESTART))
+                assertReachable(GameView.B_RESUME, 56f, 0.6f)
+                press(GameView.B_RESUME)
+                assertFalse(game.isPaused)
             }
+            if (i == 3) {
+                // Save and quit mid-round, then continue from the title.
+                press(GameView.B_PAUSE)
+                press(GameView.B_QUIT)
+                assertEquals(GameView.Mode.TITLE, game.mode)
+                run(300)
+                frame("h4-quit-title")
+                val before = game.scoresForTest
+                press(GameView.B_PLAY)
+                assertEquals(GameView.Mode.PLAY, game.mode)
+                assertEquals(3, game.holeIndex)
+                assertEquals(before.toList(), game.scoresForTest.toList())
+                runUntil(3000) { !game.busy }
+            }
+            playHole("h${i + 1}-2")
+            run(1200)
+            assertEquals(GameView.Mode.CARD, game.mode)
+            run(500)
+            frame("h${i + 1}-3-card")
+            assertReachable(GameView.B_NEXT, 56f, 0.6f)
             println("${game.hole.name}: ${game.strokesForTest} (par ${game.hole.par})")
-            press(GameView.B_NEXT)
+            if (i == 0) {
+                assertTrue(game.onBack()) // Back on a card doesn't throw the round away
+                assertEquals(GameView.Mode.CARD, game.mode)
+                tap(game.width / 2f, game.height * 0.25f) // tap anywhere carries on
+                runUntil(2000) { !game.fading }
+            } else press(GameView.B_NEXT)
         }
         assertEquals(GameView.Mode.FINAL, game.mode)
         run(800)
@@ -179,17 +253,19 @@ class UiPlaythroughTest {
         val scores = game.scoresForTest
         assertTrue(scores.all { it > 0 })
         println("round: ${scores.toList()} = ${scores.sum()} (par ${game.course.par})")
+        assertReachable(GameView.B_AGAIN, 56f, 0.6f)
 
         press(GameView.B_MENU)
         assertEquals(GameView.Mode.TITLE, game.mode)
+        run(300)
         frame("91-title-best")
 
-        // Hole select: everything is unlocked now. Practise hole 1.
+        // Practise hole 1: everything is unlocked now.
         press(GameView.B_HOLES)
-        assertEquals(GameView.Mode.SELECT, game.mode)
-        run(200)
+        while (game.selectedHole > 0) press(GameView.B_PREV_HOLE)
+        run(300)
         frame("92-select")
-        press(GameView.B_HOLE0)
+        press(GameView.B_PLAY_HOLE)
         assertEquals(GameView.Mode.PLAY, game.mode)
         assertFalse(game.courseRun)
         runUntil(3000) { !game.busy }
@@ -213,15 +289,26 @@ class UiPlaythroughTest {
         assertEquals(2, game.strokesForTest)
         assertEquals(game.hole.teeX, game.ballX, 0.01f)
 
-        // Pause, then resume; back toggles pause too.
-        press(GameView.B_PAUSE)
-        assertTrue(game.isPaused)
-        frame("94-pause")
-        press(GameView.B_RESUME)
+        // A drag that starts on the pause chip is a shot, not a pause.
+        run(32)
+        val (cx, cy) = game.buttonCenter(GameView.B_PAUSE)!!
+        touch(MotionEvent.ACTION_DOWN, cx, cy)
+        for (k in 1..6) { touch(MotionEvent.ACTION_MOVE, cx, cy + 40f * k); run(16) }
+        touch(MotionEvent.ACTION_UP, cx, cy + 240f)
+        run(32)
         assertFalse(game.isPaused)
+        assertEquals(3, game.strokesForTest)
+        waitForRest()
+
+        // Practice pause offers Restart; Back closes the sheet.
+        press(GameView.B_PAUSE)
+        assertNotNull(game.buttonCenter(GameView.B_RESTART))
         assertTrue(game.onBack())
-        assertTrue(game.isPaused)
+        assertFalse(game.isPaused)
+        press(GameView.B_PAUSE)
         press(GameView.B_QUIT)
         assertEquals(GameView.Mode.TITLE, game.mode)
+
+        assertTrue("labels that don't fit: ${game.textOverflows}", game.textOverflows.isEmpty())
     }
 }

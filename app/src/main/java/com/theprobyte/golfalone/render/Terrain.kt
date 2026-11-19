@@ -5,17 +5,21 @@ import com.theprobyte.golfalone.game.Hole
 import com.theprobyte.golfalone.game.TILE
 import com.theprobyte.golfalone.game.Tile
 import kotlin.math.min
+import kotlin.math.sqrt
 
 /**
- * Paints a hole's ground once, pixel by pixel, from its tiles:
- * - mown stripes, rough tufts with flowers, beaches with shells and pebbles
- * - stone blocks lit from the top left, driftwood logs with grain and cut ends
- * - terraced shading on slopes
+ * Paints a hole's ground once, pixel by pixel, from its tiles. It follows the style rules
+ * in docs/STYLE_AND_UI_PLAN.md:
+ * - Shading steps along hue-shifted ramps.
+ * - Texture comes in small clusters on a jittered grid, never per-pixel noise.
+ * - Light comes from the top left, and walls and logs cast offset shadows.
+ * - Every ground edge is smoothed.
+ * - It's drawn in a 3/4 view: islands stand on a short bank above the sea, and walls show
+ *   a top face and a front face.
  *
- * The coastline is smoothed per pixel (a blurred land mask), so islands read as rounded
- * shapes rather than tile staircases. Straight tile edges stay exactly where physics has
- * them, and only corners round off, by about 3 px at most. The sea's foam and ripples are
- * four transparent overlay frames played on top.
+ * Physics stays on the tile grid. Smoothing only rounds corners (by under 3 px), banks are
+ * drawn over water, and wall faces stay inside their own tiles. The sea's foam and ripples
+ * are four transparent overlay frames played on top.
  */
 class Terrain(private val hole: Hole) {
 
@@ -24,213 +28,313 @@ class Terrain(private val hole: Hole) {
     val ground: Bitmap
     val water: Array<Bitmap>
 
-    /** Visual land mask (per pixel), after smoothing. */
+    /** Visual land mask per pixel, after smoothing. */
     private val land = BooleanArray(w * h)
-    /** Distance (px, chamfer) from each pixel to the nearest pixel of the other kind (land/water). */
+    /** Bank face (0 none, 1..BANK_H rows down from the shore) on water pixels below land. */
+    private val bank = ByteArray(w * h)
+    /** Ground kind per land pixel after smoothing the tile classes. */
+    private val kind = ByteArray(w * h)
+    /** Land pixels: distance to water. Water pixels: distance to land or bank. */
     private val edge = FloatArray(w * h)
 
     init {
         computeLand()
+        computeKinds()
+        computeBanks()
         computeEdges()
         val px = IntArray(w * h)
-        for (y in 0 until h) for (x in 0 until w) px[y * w + x] = groundPixel(x, y)
-        ground = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, w, 0, 0, w, h) }
+        for (y in 0 until h) for (x in 0 until w) px[y * w + x] = basePixel(x, y)
+        decorate(px)
+        castShadows(px)
+        ground = Pix.bitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, w, 0, 0, w, h) }
         water = Array(FRAMES) { f ->
             val o = IntArray(w * h)
             for (y in 0 until h) for (x in 0 until w) o[y * w + x] = waterPixel(x, y, f)
-            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(o, 0, w, 0, 0, w, h) }
+            Pix.bitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(o, 0, w, 0, 0, w, h) }
         }
     }
 
     private fun tileAt(x: Int, y: Int): Tile = hole.tile(Math.floorDiv(x, TILE), Math.floorDiv(y, TILE))
 
-    /** Box-blurs the tile land mask (radius 4) and thresholds it, with a little jitter. */
-    private fun computeLand() {
-        val r = 4
+    /** Box-blurs a per-tile predicate over pixels (window 2r×2r) into 0..1. */
+    private fun blur(r: Int, pred: (Tile) -> Boolean): FloatArray {
         val iw = w + 2 * r + 1
         val ih = h + 2 * r + 1
-        val sum = IntArray(iw * ih) // integral image over the padded mask
+        val sum = IntArray(iw * ih)
         for (y in 1 until ih) {
             var row = 0
             for (x in 1 until iw) {
-                if (!tileAt(x - 1 - r, y - 1 - r).water) row++
+                if (pred(tileAt(x - 1 - r, y - 1 - r))) row++
                 sum[y * iw + x] = sum[(y - 1) * iw + x] + row
             }
         }
         val area = ((2 * r) * (2 * r)).toFloat()
+        val out = FloatArray(w * h)
         for (y in 0 until h) for (x in 0 until w) {
-            // Window of 2r×2r pixels centred on the pixel's centre.
             val x0 = x + 1
             val y0 = y + 1
             val x1 = x + 2 * r + 1
             val y1 = y + 2 * r + 1
-            val s = sum[y1 * iw + x1] - sum[y0 * iw + x1] - sum[y1 * iw + x0] + sum[y0 * iw + x0]
-            val v = s / area + (hash(x / 2, y / 2, 9) - 0.5f) * 0.14f
-            land[y * w + x] = v > 0.5f
+            out[y * w + x] = (sum[y1 * iw + x1] - sum[y0 * iw + x1] - sum[y1 * iw + x0] + sum[y0 * iw + x0]) / area
+        }
+        return out
+    }
+
+    private fun computeLand() {
+        val v = blur(4) { !it.water }
+        for (y in 0 until h) for (x in 0 until w) {
+            land[y * w + x] = v[y * w + x] + (hash(x / 2, y / 2, 9) - 0.5f) * 0.14f > 0.5f
         }
     }
 
-    /** Two-pass chamfer distance to the nearest pixel of the opposite kind, capped. */
+    private fun computeKinds() {
+        val sand = blur(3) { it == Tile.SAND }
+        val green = blur(3) { it.isGreen }
+        val fair = blur(3) { it == Tile.FAIRWAY }
+        for (y in 0 until h) for (x in 0 until w) {
+            val i = y * w + x
+            val t = tileAt(x, y)
+            kind[i] = when {
+                !land[i] -> K_WATER
+                t == Tile.WALL -> K_WALL
+                t == Tile.WOOD -> K_WOOD
+                sand[i] > 0.5f -> K_SAND
+                green[i] > 0.5f -> K_GREEN
+                fair[i] > 0.5f -> K_FAIR
+                else -> K_ROUGH
+            }
+        }
+    }
+
+    private fun computeBanks() {
+        for (y in 0 until h) for (x in 0 until w) {
+            val i = y * w + x
+            if (land[i]) continue
+            for (k in 1..BANK_H) {
+                if (y - k >= 0 && land[(y - k) * w + x]) { bank[i] = k.toByte(); break }
+            }
+        }
+    }
+
+    /** Two-pass chamfer distance from every pixel where [isSource] holds. */
+    private fun distanceFrom(isSource: (Int) -> Boolean): FloatArray {
+        val d = FloatArray(w * h) { if (isSource(it)) 0f else 99f }
+        for (y in 0 until h) for (x in 0 until w) {
+            val i = y * w + x
+            var v = d[i]
+            if (x > 0) v = min(v, d[i - 1] + 1f)
+            if (y > 0) v = min(v, d[i - w] + 1f)
+            if (x > 0 && y > 0) v = min(v, d[i - w - 1] + 1.414f)
+            if (x < w - 1 && y > 0) v = min(v, d[i - w + 1] + 1.414f)
+            d[i] = v
+        }
+        for (y in h - 1 downTo 0) for (x in w - 1 downTo 0) {
+            val i = y * w + x
+            var v = d[i]
+            if (x < w - 1) v = min(v, d[i + 1] + 1f)
+            if (y < h - 1) v = min(v, d[i + w] + 1f)
+            if (x < w - 1 && y < h - 1) v = min(v, d[i + w + 1] + 1.414f)
+            if (x > 0 && y < h - 1) v = min(v, d[i + w - 1] + 1.414f)
+            d[i] = v
+        }
+        return d
+    }
+
     private fun computeEdges() {
-        val inf = 99f
-        for (pass in 0..1) {
-            val want = pass == 0 // pass 0: distance for water pixels to land; pass 1: land to water
-            val d = FloatArray(w * h) { if (land[it] == want) 0f else inf }
-            for (y in 0 until h) for (x in 0 until w) {
-                val i = y * w + x
-                var v = d[i]
-                if (x > 0) v = min(v, d[i - 1] + 1f)
-                if (y > 0) v = min(v, d[i - w] + 1f)
-                if (x > 0 && y > 0) v = min(v, d[i - w - 1] + 1.414f)
-                if (x < w - 1 && y > 0) v = min(v, d[i - w + 1] + 1.414f)
-                d[i] = v
-            }
-            for (y in h - 1 downTo 0) for (x in w - 1 downTo 0) {
-                val i = y * w + x
-                var v = d[i]
-                if (x < w - 1) v = min(v, d[i + 1] + 1f)
-                if (y < h - 1) v = min(v, d[i + w] + 1f)
-                if (x < w - 1 && y < h - 1) v = min(v, d[i + w + 1] + 1.414f)
-                if (x > 0 && y < h - 1) v = min(v, d[i + w - 1] + 1.414f)
-                d[i] = v
-            }
-            // Pixels on the far side of the map edge count as water, which matters for land touching it.
-            for (i in 0 until w * h) if (land[i] != want) edge[i] = d[i] - 0.5f
-        }
+        val toWater = distanceFrom { !land[it] }
+        val toShore = distanceFrom { land[it] || bank[it] > 0 }
+        for (i in 0 until w * h) edge[i] = if (land[i]) toWater[i] - 0.5f else toShore[i] - 0.5f
     }
 
-    private fun groundPixel(x: Int, y: Int): Int {
+    private fun k(x: Int, y: Int): Byte = if (x < 0 || y < 0 || x >= w || y >= h) K_WATER else kind[y * w + x]
+
+    private fun basePixel(x: Int, y: Int): Int {
+        val i = y * w + x
         val tx = x / TILE
         val ty = y / TILE
         val u = x % TILE
         val v = y % TILE
-        var t = hole.tile(tx, ty)
-        val n = hash(x, y, 1)
-        val d = edge[y * w + x]
-        val isLand = land[y * w + x]
+        val kd = kind[i]
+        val d = edge[i]
+        val b = bayer(x, y) / 16f
 
-        if (!isLand) {
-            val dith = hash(x, y, 7) * 1.5f
-            return when {
-                d + dith < 3.5f -> Palette.SHALLOW
-                d + dith < 8f -> Palette.MID
+        if (kd == K_WATER) {
+            when (bank[i].toInt()) { // the island's bank face
+                1 -> return Palette.BANK
+                2 -> return Palette.BANK_DARK
+                3 -> return Palette.BANK_DARKER
+            }
+            var c = when {
+                d < 2.5f + b * 2f -> Palette.SHOAL
+                d < 6.5f + b * 2f -> Palette.SHALLOW
+                d < 11f + b * 3f -> Palette.MID
                 else -> Palette.DEEP
             }
+            // The bank shades the water at its foot.
+            if (y > 0 && bank[i - w] > 0) c = Palette.darker(c)
+            else if (y > 1 && bank[i - 2 * w] > 0 && (x + y) % 2 == 0) c = Palette.darker(c)
+            return c
         }
-        if (t == Tile.WALL) return stone(tx, ty, u, v, n)
-        if (t == Tile.WOOD) return wood(tx, ty, u, v)
-        if (t.water) t = Tile.ROUGH // a smoothed-in corner of the coast
+        if (kd == K_WALL) return stone(tx, ty, u, v, x)
+        if (kd == K_WOOD) return wood(tx, ty, u, v)
 
-        // Beaches where land meets the sea, with the odd shell or pebble.
-        if (d < 3.6f + hash(x, y, 3)) {
-            val shell = hash(x / 2, y / 2, 21)
-            if (d > 0.8f && shell < 0.035f) return if (hash(x, y, 22) < 0.5f) Palette.SHELL else Palette.SHELL_PINK
-            if (d > 0.8f && shell > 0.975f) return Palette.PEBBLE
-            if (d < 1.6f) return if (n < 0.2f) Palette.SAND else Palette.SAND_LIGHT
-            return if (n < 0.12f) Palette.SAND_DARK else Palette.SAND
-        }
+        // Beaches where land meets the sea.
+        if (d < 3.4f + hash(x / 3, y / 3, 3)) return if (d < 1.5f) Palette.SAND_LIGHT else Palette.SAND
 
-        var c = when {
-            t == Tile.FAIRWAY -> when {
-                hash(x / 2, y / 2, 33) < 0.004f && (x + y) % 2 == 0 -> Palette.FLOWER_W // a daisy
-                n < 0.05f -> Palette.FAIR_DOT
-                ty % 2 == 0 -> Palette.FAIR_A
-                else -> Palette.FAIR_B
-            }
-            t == Tile.ROUGH -> {
-                val f = hash(x / 2, y / 2, 31)
+        return when (kd) {
+            K_FAIR -> if (ty % 2 == 0) Palette.FAIR_A else Palette.FAIR_B
+            K_ROUGH -> Palette.ROUGH
+            K_SAND -> {
+                val lip = k(x - 1, y) != K_SAND || k(x + 1, y) != K_SAND || k(x, y - 1) != K_SAND || k(x, y + 1) != K_SAND
                 when {
-                    f < 0.012f && (x + y) % 2 == 0 -> when ((hash(x / 2, y / 2, 32) * 3).toInt()) {
-                        0 -> Palette.FLOWER_Y
-                        1 -> Palette.FLOWER_P
-                        else -> Palette.FLOWER_W
-                    }
-                    n < 0.13f -> Palette.ROUGH_DARK
-                    n > 0.95f || (hash(x, y + 1, 1) > 0.95f) -> Palette.ROUGH_LIGHT
-                    else -> Palette.ROUGH
+                    lip -> Palette.SAND_DARK
+                    (x + 2 * y + (hash(x / 6, y / 6, 4) * 3).toInt()) % 7 == 0 -> Palette.SAND_DARK // wind ripples
+                    else -> Palette.SAND
                 }
             }
-            t == Tile.SAND -> {
-                val lip = neighbourDiffers(x, y) { it != Tile.SAND }
-                if (lip) Palette.SAND_DARK else if (n < 0.1f) Palette.SAND_DARK else if (n > 0.93f) Palette.SAND_LIGHT else Palette.SAND
-            }
-            t.isGreen -> {
-                var g = if (tx % 2 == 0) Palette.GREEN_A else Palette.GREEN_B
+            K_GREEN -> {
+                val t = tileAt(x, y)
+                var g = if (((x / 8) + (y / 8)) % 2 == 0) Palette.GREEN_A else Palette.GREEN_B
                 if (t.slopeX != 0f || t.slopeY != 0f) {
-                    // Terraced shading: darker towards the downhill side of each tile.
-                    val k = when {
-                        t.slopeY > 0 -> v / 7f
-                        t.slopeY < 0 -> 1f - v / 7f
-                        t.slopeX > 0 -> u / 7f
-                        else -> 1f - u / 7f
-                    }
-                    g = Palette.lerp(Palette.GREEN_A, Palette.SLOPE_DARK, k * 0.9f)
+                    // Grain streaks running downhill (the glints show which way).
+                    val along = if (t.slopeX != 0f) x else y
+                    val across = if (t.slopeX != 0f) y else x
+                    g = Palette.GREEN_B
+                    if (across % 4 == 1 && (along + across * 3) % 6 < 3) g = Palette.SLOPE_DARK
                 }
-                if (neighbourDiffers(x, y) { !it.isGreen }) Palette.lerp(g, Palette.FAIR_A, 0.6f) else g
+                val collar = k(x - 1, y) != K_GREEN || k(x + 1, y) != K_GREEN || k(x, y - 1) != K_GREEN || k(x, y + 1) != K_GREEN
+                if (collar) Palette.COLLAR else g
             }
-            else -> Palette.FAIR_A
+            else -> Palette.ROUGH
         }
-
-        // Shadows cast by stone and wood to the bottom right (light from the top left).
-        val above = hole.tile(tx, ty - 1).solid
-        val left = hole.tile(tx - 1, ty).solid
-        val diag = hole.tile(tx - 1, ty - 1).solid
-        if ((above && v < 3) || (left && u < 2) || (diag && u < 2 && v < 3)) c = Palette.shade(c, 0.74f)
-        return c
     }
 
-    private fun stone(tx: Int, ty: Int, u: Int, v: Int, n: Float): Int {
+    /** Clusters on a jittered grid: tufts and flowers in the rough, daisies, shells and pebbles. */
+    private fun decorate(px: IntArray) {
+        fun put(x: Int, y: Int, c: Int, onlyKind: Byte) {
+            if (x < 0 || y < 0 || x >= w || y >= h) return
+            if (kind[y * w + x] != onlyKind || edge[y * w + x] < 3.6f) return
+            px[y * w + x] = c
+        }
+        var gy = 0
+        while (gy < h) {
+            var gx = 0
+            while (gx < w) {
+                val x = gx + (hash(gx, gy, 1) * 4).toInt()
+                val y = gy + (hash(gx, gy, 2) * 4).toInt()
+                val r = hash(gx, gy, 3)
+                if (x in 1 until w - 2 && y in 1 until h) {
+                    when (kind[y * w + x]) {
+                        K_ROUGH -> if (r < 0.5f) { // a tuft
+                            put(x, y, Palette.ROUGH_DARK, K_ROUGH); put(x + 1, y, Palette.ROUGH_DARK, K_ROUGH)
+                            put(x + 2, y, Palette.ROUGH_DARK, K_ROUGH); put(x + 1, y - 1, Palette.ROUGH_LIGHT, K_ROUGH)
+                        } else if (r > 0.93f) { // a flower
+                            put(x, y, if (hash(gx, gy, 5) < 0.5f) Palette.FLOWER_Y else Palette.FLOWER_P, K_ROUGH)
+                            put(x, y + 1, Palette.ROUGH_DARK, K_ROUGH)
+                        }
+                        K_FAIR -> if (r < 0.035f) {
+                            put(x, y, Palette.FLOWER_W, K_FAIR); put(x, y + 1, Palette.FAIR_DOT, K_FAIR)
+                        }
+                        else -> {}
+                    }
+                }
+                gx += 5
+            }
+            gy += 5
+        }
+        // Shells and pebbles on the beaches.
+        gy = 0
+        while (gy < h) {
+            var gx = 0
+            while (gx < w) {
+                val x = gx + (hash(gx, gy, 11) * 6).toInt()
+                val y = gy + (hash(gx, gy, 12) * 6).toInt()
+                if (x in 0 until w - 1 && y in 0 until h) {
+                    val i = y * w + x
+                    val d = edge[i]
+                    if (land[i] && kind[i] != K_WALL && kind[i] != K_WOOD && d in 1.2f..3.2f) {
+                        val r = hash(gx, gy, 13)
+                        when {
+                            r < 0.18f -> { px[i] = Palette.SHELL; px[i + 1] = Palette.SHELL_PINK }
+                            r < 0.28f -> px[i] = Palette.PEBBLE
+                        }
+                    }
+                }
+                gx += 7
+            }
+            gy += 7
+        }
+    }
+
+    /** Walls and logs cast their footprint (2, 2) to the bottom right, one ramp step down. */
+    private fun castShadows(px: IntArray) {
+        fun solid(x: Int, y: Int) = tileAt(x, y).solid
+        for (y in 0 until h) for (x in 0 until w) {
+            val i = y * w + x
+            if (!land[i] || solid(x, y)) continue
+            if (!solid(x - 2, y - 2)) continue
+            val rim = !(solid(x - 3, y - 3) && solid(x - 3, y - 2) && solid(x - 2, y - 3))
+            if (!rim || (x + y) % 2 == 0) px[i] = Palette.darker(px[i])
+        }
+    }
+
+    /** Stone in 3/4 view: a light top face, and a front face with mortar above open ground. */
+    private fun stone(tx: Int, ty: Int, u: Int, v: Int, x: Int): Int {
         val up = hole.tile(tx, ty - 1) == Tile.WALL
         val down = hole.tile(tx, ty + 1) == Tile.WALL
         val left = hole.tile(tx - 1, ty) == Tile.WALL
         val right = hole.tile(tx + 1, ty) == Tile.WALL
-        // Round off outer corners.
         val corner = (!up && !left && u == 0 && v == 0) || (!up && !right && u == 7 && v == 0) ||
             (!down && !left && u == 0 && v == 7) || (!down && !right && u == 7 && v == 7)
         if (corner) return groundBehind(tx, ty, u, v)
+        if (!down && v >= FACE_TOP) {
+            return when {
+                v == 7 -> Palette.STONE_DARKER
+                (x + (if (v == 6) 3 else 0)) % 6 == 0 -> Palette.STONE_DARK
+                !right && u == 7 -> Palette.STONE_DARK
+                else -> Palette.STONE
+            }
+        }
         return when {
-            !down && v == 7 -> Palette.STONE_DARKER
-            !down && v >= 5 -> Palette.STONE_DARK
             !up && v == 0 -> Palette.STONE_LIGHT
             !left && u == 0 -> Palette.STONE_LIGHT
-            !right && u == 7 -> Palette.STONE_DARK
-            // Block seams.
-            v == 3 && (u + ty) % 4 != 0 -> Palette.STONE_DARK
-            v < 3 && u == (if (ty % 2 == 0) 3 else 6) -> Palette.STONE_DARK
-            v > 3 && u == (if (ty % 2 == 0) 6 else 2) -> Palette.STONE_DARK
-            n < 0.07f -> Palette.STONE_DARK
-            n > 0.9f -> Palette.STONE_LIGHT
-            else -> Palette.STONE
+            !right && u == 7 -> Palette.STONE
+            !down && v == FACE_TOP - 1 -> Palette.STONE
+            left && u == 0 && v % 4 != 3 -> Palette.STONE // cap-stone seams
+            up && v == 0 -> Palette.STONE
+            else -> Palette.STONE_TOP
         }
     }
 
-    /** Driftwood: logs run along their neighbours, with grain and pale cut ends. */
+    /** Driftwood: logs run along their neighbours, round in section, with pale cut ends. */
     private fun wood(tx: Int, ty: Int, u0: Int, v0: Int): Int {
         val l = hole.tile(tx - 1, ty) == Tile.WOOD
         val r = hole.tile(tx + 1, ty) == Tile.WOOD
         val up = hole.tile(tx, ty - 1) == Tile.WOOD
         val dn = hole.tile(tx, ty + 1) == Tile.WOOD
         val horizontal = l || r || !(up || dn)
-        // Work in log space: a = along the log, b = across (0 top/left … 7).
-        val a = if (horizontal) u0 else v0
-        val b = if (horizontal) v0 else u0
+        val a = if (horizontal) u0 else v0 // along the log
+        val b = if (horizontal) v0 else u0 // across (0 = lit side)
         val startOpen = if (horizontal) !l else !up
         val endOpen = if (horizontal) !r else !dn
-        // Rounded ends.
         if ((startOpen && a == 0 || endOpen && a == 7) && (b <= 1 || b >= 6)) return groundBehind(tx, ty, u0, v0)
-        if ((startOpen && a <= 1 || endOpen && a >= 6)) {
-            // Cut end: pale rings.
-            return if (b == 0 || b == 7 || (a == 0 || a == 7)) Palette.WOOD_DARK
-            else if ((b == 3 || b == 4) && (a == 1 || a == 6)) Palette.WOOD_DARK else Palette.WOOD_LIGHT
+        if (startOpen && a <= 1 || endOpen && a >= 6) {
+            val rim = b == 0 || b == 7 || a == 0 || a == 7
+            return when {
+                rim -> Palette.WOOD_DARK
+                (b == 3 || b == 4) && (a == 1 || a == 6) -> Palette.WOOD_LIGHT
+                else -> Palette.WOOD_PALE
+            }
         }
-        val g = Terrain.hash(tx * 8 + a, ty, 51)
-        return when {
-            b == 0 -> Palette.WOOD_LIGHT
-            b == 7 -> Palette.WOOD_DARKER
-            b == 6 -> Palette.WOOD_DARK
-            (b == 2 || b == 4) && g > 0.25f -> Palette.WOOD_DARK
-            b == 1 && g > 0.7f -> Palette.WOOD_LIGHT
-            else -> Palette.WOOD
+        val g = hash(tx * 8 + a, ty * 8 + b, 51)
+        return when (b) {
+            0 -> Palette.WOOD_DARK
+            1 -> if (g > 0.35f) Palette.WOOD_PALE else Palette.WOOD_LIGHT
+            2 -> Palette.WOOD_LIGHT
+            3, 4 -> if ((a + b * 3) % 5 == 0) Palette.WOOD_DARK else Palette.WOOD
+            5 -> Palette.WOOD
+            6 -> Palette.WOOD_DARK
+            else -> Palette.WOOD_DARKER
         }
     }
 
@@ -241,7 +345,7 @@ class Terrain(private val hole: Hole) {
         val t = sequenceOf(hole.tile(tx + ox, ty), hole.tile(tx, ty + oy), hole.tile(tx + ox, ty + oy))
             .firstOrNull { !it.solid } ?: Tile.ROUGH
         return when {
-            t.water -> Palette.SHALLOW
+            t.water -> Palette.SHOAL
             t.isGreen -> Palette.GREEN_B
             t == Tile.SAND -> Palette.SAND
             t == Tile.FAIRWAY -> Palette.FAIR_B
@@ -249,48 +353,61 @@ class Terrain(private val hole: Hole) {
         }
     }
 
-    private inline fun neighbourDiffers(x: Int, y: Int, pred: (Tile) -> Boolean): Boolean =
-        pred(tileAt(x - 1, y)) || pred(tileAt(x + 1, y)) || pred(tileAt(x, y - 1)) || pred(tileAt(x, y + 1))
-
     private fun waterPixel(x: Int, y: Int, f: Int): Int {
-        if (land[y * w + x]) return 0
-        val d = edge[y * w + x]
-        val n = hash(x, y, 11)
-        // Foam hugging the shore, shimmering.
-        if (d < 1.2f) return if ((((x + y) / 2 + f) % FRAMES) != 0) Palette.alpha(Palette.FOAM, 220) else Palette.alpha(Palette.FOAM, 120)
-        if (d < 2.2f && hash(x / 2, y / 2, 5 + f) < 0.45f) return Palette.alpha(Palette.FOAM, 110)
-        // A ripple band walking out from the shore.
-        val r = 3f + f * 1.25f
-        if (d >= r && d < r + 1f && n < 0.55f) return Palette.alpha(Palette.FOAM, 70 - f * 12)
-        // Glints on open water.
-        if (d > 6f && hash(x / 2, y, 100 + f) < 0.006f) return Palette.alpha(Palette.SPARKLE, 200)
+        val i = y * w + x
+        if (land[i] || bank[i] > 0) return 0
+        val d = edge[i]
+        // A continuous foam line hugging the shore, with a broken second row.
+        if (d < 1.3f) return Palette.alpha(Palette.FOAM, 230)
+        if (d < 2.3f && ((x / 2 + y + f) % 4) != 0) return Palette.alpha(Palette.FOAM, 110)
+        // A dashed ripple ring walking out from the shore.
+        val r = 3.5f + f * 1.5f
+        if (d >= r && d < r + 1f && ((x + y) / 2) % 3 != 0) return Palette.alpha(Palette.RIPPLE, 150 - f * 30)
+        // Twinkles on open water, a 2 px glint on a sparse jittered grid.
+        if (d > 8f) {
+            val gx = x / 9
+            val gy = y / 9
+            val jx = gx * 9 + (hash(gx, gy, 61) * 7).toInt()
+            val jy = gy * 9 + (hash(gx, gy, 62) * 7).toInt()
+            val on = ((hash(gx, gy, 63) * FRAMES).toInt() + f) % FRAMES < 2
+            if (on && y == jy && (x == jx || x == jx + 1)) return Palette.alpha(Palette.RIPPLE, 210)
+        }
         return 0
     }
 
     /**
-     * How far the drawn coastline strays from the physics tiles: the deepest pixel (px from
-     * the nearest tile of the drawn kind) drawn as land on a water tile, and as water on a
-     * land tile.
+     * How far the drawn ground strays from the physics tiles, as the deepest stray pixel
+     * (px from the nearest tile of the drawn kind):
+     * [0] drawn land on a water tile, [1] drawn water on a land tile,
+     * [2] sand drawn off or missing from sand tiles, [3] green likewise.
+     * Bank faces are left out: they're a cliff drawn over water on purpose.
      */
-    fun coastMismatch(): FloatArray {
-        val out = FloatArray(2)
-        for (y in 0 until h) for (x in 0 until w) {
+    fun mismatch(): FloatArray {
+        val out = FloatArray(4)
+        fun depth(x: Int, y: Int, want: (Tile) -> Boolean): Float {
             val tx = x / TILE
             val ty = y / TILE
-            val tileLand = !hole.tile(tx, ty).water
-            val drawnLand = land[y * w + x]
-            if (tileLand == drawnLand) continue
             var best = 99f
             for (dy in -1..1) for (dx in -1..1) {
-                if (!hole.tile(tx + dx, ty + dy).water != drawnLand) continue
+                if (!want(hole.tile(tx + dx, ty + dy))) continue
                 val l = (tx + dx) * TILE.toFloat()
                 val t = (ty + dy) * TILE.toFloat()
                 val ex = maxOf(l - (x + 0.5f), 0f, (x + 0.5f) - (l + TILE))
                 val ey = maxOf(t - (y + 0.5f), 0f, (y + 0.5f) - (t + TILE))
-                best = minOf(best, kotlin.math.sqrt(ex * ex + ey * ey))
+                best = minOf(best, sqrt(ex * ex + ey * ey))
             }
-            val k = if (drawnLand) 0 else 1
-            out[k] = maxOf(out[k], best)
+            return best
+        }
+        for (y in 0 until h) for (x in 0 until w) {
+            val i = y * w + x
+            val t = tileAt(x, y)
+            val kd = kind[i]
+            if (land[i] && t.water) out[0] = maxOf(out[0], depth(x, y) { !it.water })
+            if (!land[i] && !t.water) out[1] = maxOf(out[1], depth(x, y) { it.water })
+            if (land[i] && !t.solid) {
+                if ((kd == K_SAND) != (t == Tile.SAND)) out[2] = maxOf(out[2], depth(x, y) { (it == Tile.SAND) == (kd == K_SAND) })
+                if ((kd == K_GREEN) != t.isGreen) out[3] = maxOf(out[3], depth(x, y) { it.isGreen == (kd == K_GREEN) })
+            }
         }
         return out
     }
@@ -303,11 +420,25 @@ class Terrain(private val hole: Hole) {
         val src = IntArray(w * h)
         ground.getPixels(src, 0, w, 0, 0, w, h)
         for (y in 0 until th) for (x in 0 until tw) px[y * tw + x] = src[(y * step + step / 2) * w + x * step + step / 2]
-        return Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, tw, 0, 0, tw, th) }
+        return Pix.bitmap(tw, th, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, tw, 0, 0, tw, th) }
     }
 
     companion object {
         const val FRAMES = 4
+        const val BANK_H = 3
+        /** First row of a wall tile's front face (rows FACE_TOP..7). */
+        const val FACE_TOP = 5
+
+        private const val K_WATER: Byte = 0
+        private const val K_ROUGH: Byte = 1
+        private const val K_FAIR: Byte = 2
+        private const val K_GREEN: Byte = 3
+        private const val K_SAND: Byte = 4
+        private const val K_WALL: Byte = 5
+        private const val K_WOOD: Byte = 6
+
+        private val BAYER = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
+        fun bayer(x: Int, y: Int): Int = BAYER[(y and 3) * 4 + (x and 3)]
 
         fun hash(x: Int, y: Int, s: Int): Float {
             var h = x * 374761393 + y * 668265263 + s * 1442695041

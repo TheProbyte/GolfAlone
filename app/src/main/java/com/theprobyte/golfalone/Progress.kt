@@ -30,6 +30,32 @@ class Progress(context: Context) {
     /** Hole [index] can be practised once the hole before it has been finished. */
     fun unlocked(index: Int): Boolean = index == 0 || best(index - 1) > 0
 
+    /** A course round in progress: the next hole to play, or -1. */
+    val runHole: Int get() = prefs.getInt("run_hole", -1)
+
+    /** Strokes so far in the round in progress, one per hole (0 = not played). */
+    fun runScores(n: Int): IntArray {
+        val parts = (prefs.getString("run_scores", "") ?: "").split(',')
+        return IntArray(n) { parts.getOrNull(it)?.toIntOrNull() ?: 0 }
+    }
+
+    fun saveRun(nextHole: Int, scores: IntArray) =
+        prefs.edit().putInt("run_hole", nextHole).putString("run_scores", scores.joinToString(",")).apply()
+
+    fun clearRun() = prefs.edit().remove("run_hole").remove("run_scores").apply()
+
+    var leftHanded: Boolean
+        get() = prefs.getBoolean("left_handed", false)
+        set(v) = prefs.edit().putBoolean("left_handed", v).apply()
+
+    var reduceMotion: Boolean
+        get() = prefs.getBoolean("reduce_motion", false)
+        set(v) = prefs.edit().putBoolean("reduce_motion", v).apply()
+
+    var debugOverlay: Boolean
+        get() = prefs.getBoolean("debug_overlay", false)
+        set(v) = prefs.edit().putBoolean("debug_overlay", v).apply()
+
     var sound: Boolean
         get() = prefs.getBoolean("sound", true)
         set(v) = prefs.edit().putBoolean("sound", v).apply()

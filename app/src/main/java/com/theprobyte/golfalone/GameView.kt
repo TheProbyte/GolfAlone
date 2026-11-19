@@ -25,6 +25,7 @@ import com.theprobyte.golfalone.render.Pix
 import com.theprobyte.golfalone.render.Pix.px
 import com.theprobyte.golfalone.render.Pix.rect
 import com.theprobyte.golfalone.render.PixelFont
+import com.theprobyte.golfalone.render.PixelFont.Face
 import com.theprobyte.golfalone.render.Sprites
 import com.theprobyte.golfalone.render.Terrain
 import java.util.concurrent.Executors
@@ -51,9 +52,13 @@ import kotlin.random.Random
  * one pixel larger than the view and shifted by the camera's sub-pixel remainder in whole
  * screen pixels, so the camera glides smoothly while the art stays on its grid.
  *
- * Screens: title → course round (holes in order) or hole select → practice. A round ends
- * on the course scorecard. Buttons are registered as they're drawn each frame and fire on
- * release.
+ * The UI is thumb-first (docs/STYLE_AND_UI_PLAN.md):
+ * - Menus are bottom sheets of scorecard paper, with the main driftwood button lowest.
+ * - Nothing you tap sits in the top quarter of the screen.
+ * - While playing, the lower half stays free for the pull-back. Pause is a chip that fires
+ *   only on a clean tap, and holding still peeks at the green.
+ *
+ * Buttons are registered as they're drawn each frame and fire on release.
  */
 class GameView(
     context: Context,
@@ -63,9 +68,14 @@ class GameView(
 ) : View(context), PhysicsEvents {
 
     enum class Mode { TITLE, SELECT, PLAY, CARD, FINAL }
+    enum class Sheet { NONE, PAUSE, SETTINGS }
 
     var mode = Mode.TITLE
         private set
+    var sheet = Sheet.NONE
+        private set
+    private var sheetReturn = Sheet.NONE
+    private var sheetT = 0f
 
     // ---------------------------------------------------------------- course
 
@@ -74,6 +84,7 @@ class GameView(
     private val builder = Executors.newSingleThreadExecutor { r -> Thread(r, "terrain").apply { isDaemon = true } }
     private val terrains: List<Future<Terrain>> = course.holes.map { h -> builder.submit<Terrain> { Terrain(h) } }
     private val thumbs = arrayOfNulls<Bitmap>(n)
+    private var thumbBox = 0L
 
     var holeIndex = 0
         private set
@@ -88,7 +99,12 @@ class GameView(
         private set
     private val scores = IntArray(n)
     private var courseNewBest = false
-    private var paused = false
+    private val flownOver = BooleanArray(n)
+
+    /** The hole shown in the select carousel, and its slide animation. */
+    private var sel = 0
+    private var selT = 1f
+    private var selDir = 0
 
     // ---------------------------------------------------------------- buffers
 
@@ -102,6 +118,7 @@ class GameView(
     private val wc = Canvas()
     private val uc = Canvas()
     private val blit = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
+    private val dim = Paint().apply { isFilterBitmap = false; colorFilter = android.graphics.PorterDuffColorFilter(0xB0101828.toInt(), PorterDuff.Mode.SRC_ATOP) }
     private val src = Rect()
     private val dst = RectF()
     private val density = resources.displayMetrics.density
@@ -115,6 +132,8 @@ class GameView(
     private var gestBottom = 0
     private val insetTop get() = ceil(insetTopPx / scale.toFloat()).toInt()
     private val insetBottom get() = ceil(insetBottomPx / scale.toFloat()).toInt()
+    /** Lowest y a button may reach: above the nav bar and the Home-swipe zone. */
+    private val safeBottom get() = lh - max(insetBottom, ceil(gestBottom / scale.toFloat()).toInt()) - 6
 
     // ---------------------------------------------------------------- state
 
@@ -136,15 +155,19 @@ class GameView(
     private var shakeT = -1f
     private var rollDist = 0f
     private var flyover = false
-    private var looking = false
 
     private var fadeT = -1f
     private var fadeAction: (() -> Unit)? = null
     private var fadeDone = false
 
-    // Aim
+    private val reduceMotion get() = progress.reduceMotion
+
+    // Aim and peek
     private var aiming = false
     private var aimPointer = -1
+    private var aimStartT = 0f
+    private var aimMoved = false
+    private var peeking = false
     private var downX = 0f
     private var downY = 0f
     private var curX = 0f
@@ -152,7 +175,15 @@ class GameView(
     private var power = 0f
     private var tickStep = 0
     private val cancelPx get() = 14f * density
+    private val slopPx get() = 8f * density
     private val maxDragPx get() = 0.38f * width
+
+    // Other gestures
+    private var swipeX = Float.NaN
+    private var swipeY = 0f
+    private var tapAnywhere = false
+    private var tapOutside = false
+    private var logoDownT = -1f
 
     // Effects
     private val rnd = Random(7)
@@ -187,6 +218,10 @@ class GameView(
     private var gullNext = 4f
     private var surfNext = 1.5f
 
+    // Frame times for the debug readout.
+    private val frameMs = FloatArray(120)
+    private var frameNext = 0
+
     // ---------------------------------------------------------------- buttons
 
     private val maxButtons = 24
@@ -196,6 +231,10 @@ class GameView(
     private var pressedId = NONE
     private var pressX = 0
     private var pressY = 0
+    private val sheetRect = Rect()
+
+    /** Labels that didn't fit their button (checked by the UI test). */
+    internal val textOverflows = LinkedHashSet<String>()
 
     init {
         isFocusable = true
@@ -228,9 +267,9 @@ class GameView(
         offX = ((w - lw * scale) / 2).toFloat()
         offY = ((h - lh * scale) / 2).toFloat()
         world?.recycle(); ui?.recycle()
-        world = Bitmap.createBitmap(lw + 1, lh + 1, Bitmap.Config.ARGB_8888).also { wc.setBitmap(it) }
-        ui = Bitmap.createBitmap(lw, lh, Bitmap.Config.ARGB_8888).also { uc.setBitmap(it) }
-        flyover = mode == Mode.PLAY && strokes == 0 && holeT < 1.6f && isLong()
+        world = Pix.bitmap(lw + 1, lh + 1, Bitmap.Config.ARGB_8888).also { wc.setBitmap(it) }
+        ui = Pix.bitmap(lw, lh, Bitmap.Config.ARGB_8888).also { uc.setBitmap(it) }
+        if (mode == Mode.PLAY && strokes == 0 && holeT < 1.6f && wantsFlyover()) flyover = true
         camSnap = true
     }
 
@@ -247,8 +286,8 @@ class GameView(
         sinkT = -1f
         newBest = false
         aiming = false
-        looking = false
-        paused = false
+        peeking = false
+        sheet = Sheet.NONE
         popT = -1f
         rollDist = 0f
         holeT = 0f
@@ -256,20 +295,25 @@ class GameView(
         for (k in 0 until rn) rT[k] = -1f
         for (k in 0 until tn) tAt[k] = -9f
         msg = null
-        // A long hole opens on the flag, then the camera glides back to the tee.
-        flyover = lh > 0 && isLong()
+        // A long hole opens on the flag the first time you see it, then glides back to the tee.
+        flyover = lh > 0 && wantsFlyover()
+        if (flyover) flownOver[i] = true
         camSnap = true
     }
 
+    private fun wantsFlyover() = isLong() && !flownOver[holeIndex] && !reduceMotion
+
     private fun fitsVertically() = hole.pxH <= playBottom - playTop
 
-    /** The green is out of sight from the tee: worth a flyover and the look button. */
+    /** The green is out of sight from the tee: worth a flyover, and a peek hint. */
     private fun isLong() = hole.pxH - (playBottom - playTop) > LONG_SCROLL
 
     private fun setMode(m: Mode) {
         mode = m
         modeT = 0f
         pressedId = NONE
+        sheet = Sheet.NONE
+        tapAnywhere = false
         if (m == Mode.CARD) cardT = 0f
         if (m != Mode.PLAY) flyover = false
         keepScreenOn = m == Mode.PLAY
@@ -284,11 +328,35 @@ class GameView(
         sfx.whoosh()
     }
 
+    private fun openSheet(s: Sheet) {
+        sheetReturn = if (s == Sheet.SETTINGS) sheet else Sheet.NONE
+        sheet = s
+        sheetT = 0f
+        aiming = false
+        peeking = false
+    }
+
+    private fun closeSheet() {
+        sheet = if (sheet == Sheet.SETTINGS) sheetReturn else Sheet.NONE
+        sheetReturn = Sheet.NONE
+        sheetT = 1f
+    }
+
     fun startCourse() = fadeTo {
         courseRun = true
         scores.fill(0)
         courseNewBest = false
+        progress.clearRun()
         loadHole(0)
+        setMode(Mode.PLAY)
+    }
+
+    private fun continueRound() = fadeTo {
+        courseRun = true
+        val saved = progress.runScores(n)
+        for (i in 0 until n) scores[i] = saved[i]
+        courseNewBest = false
+        loadHole(progress.runHole.coerceIn(0, n - 1))
         setMode(Mode.PLAY)
     }
 
@@ -301,24 +369,27 @@ class GameView(
     private fun toTitle() = fadeTo {
         physics.reset()
         aiming = false
-        paused = false
         setMode(Mode.TITLE)
     }
 
     private fun toSelect() = fadeTo {
         aiming = false
-        paused = false
+        sel = holeIndex
+        selT = 1f
         setMode(Mode.SELECT)
     }
 
-    /** System back: pause a hole, close a menu, or step back towards the title. */
+    private val hasSavedRound get() = progress.runHole in 1 until n
+
+    /** System back: close a sheet, pause a hole, or step back towards the title. */
     fun onBack(): Boolean {
         if (fadeT >= 0f) return true
+        if (sheet != Sheet.NONE) { closeSheet(); sfx.tap(); return true }
         when (mode) {
             Mode.TITLE -> return false
-            Mode.PLAY -> { paused = !paused; aiming = false; sfx.tap() }
+            Mode.PLAY -> { openSheet(Sheet.PAUSE); sfx.tap() }
             Mode.SELECT -> toTitle()
-            Mode.CARD -> if (courseRun) sayUi("TAP NEXT HOLE TO CARRY ON") else toSelect()
+            Mode.CARD -> if (courseRun) sayUi("TAP TO CARRY ON") else toSelect()
             Mode.FINAL -> toTitle()
         }
         return true
@@ -326,10 +397,10 @@ class GameView(
 
     /** The app went to the background: pause any hole in progress. */
     fun onHostPause() {
-        if (mode == Mode.PLAY && sinkT < 0f) paused = true
+        if (mode == Mode.PLAY && sinkT < 0f && sheet == Sheet.NONE) openSheet(Sheet.PAUSE)
         aiming = false
+        peeking = false
         pressedId = NONE
-        looking = false
     }
 
     private fun toPar(): Int {
@@ -353,69 +424,120 @@ class GameView(
         return NONE
     }
 
-    private val canAim get() = mode == Mode.PLAY && !paused && !physics.moving && !physics.inCup && !flyover
+    private val canAim get() = mode == Mode.PLAY && sheet == Sheet.NONE && !physics.moving && !physics.inCup && !flyover
+
+    private fun startAim(x: Float, y: Float, pointer: Int) {
+        aiming = true
+        aimPointer = pointer
+        aimStartT = time
+        aimMoved = false
+        peeking = false
+        downX = x; downY = y; curX = x; curY = y
+        power = 0f; tickStep = 0
+    }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (fadeT >= 0f) return true
+        val lx = floor(toLX(e.x)).toInt()
+        val ly = floor(toLY(e.y)).toInt()
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                val lx = floor(toLX(e.x)).toInt()
-                val ly = floor(toLY(e.y)).toInt()
+                tapAnywhere = false; tapOutside = false; swipeX = Float.NaN; logoDownT = -1f
                 val id = hitButton(lx, ly)
                 if (id != NONE) {
                     pressedId = id; pressX = lx; pressY = ly
+                    downX = e.x; downY = e.y
                     haptics.tap(this)
-                    if (id == B_LOOK) looking = true
-                } else if (mode == Mode.PLAY && flyover && !paused) {
-                    flyover = false // a tap skips the flyover
-                } else if (canAim && !inGestureZone(e.x, e.y)) {
-                    aiming = true
-                    aimPointer = e.getPointerId(0)
-                    downX = e.x; downY = e.y; curX = e.x; curY = e.y
-                    power = 0f; tickStep = 0
+                } else if (sheet != Sheet.NONE) {
+                    tapOutside = !sheetRect.contains(lx, ly)
+                } else when (mode) {
+                    Mode.PLAY -> if (flyover) flyover = false // a tap skips the flyover
+                    else if (canAim && !inGestureZone(e.x, e.y)) startAim(e.x, e.y, e.getPointerId(0))
+                    Mode.SELECT -> { swipeX = e.x; swipeY = e.y }
+                    Mode.CARD -> tapAnywhere = courseRun && cardT > 0.4f
+                    Mode.TITLE -> if (ly < lh / 2) logoDownT = time
+                    else -> {}
                 }
             }
             MotionEvent.ACTION_MOVE -> {
-                if (aiming) {
-                    val i = e.findPointerIndex(aimPointer)
-                    if (i >= 0) { curX = e.getX(i); curY = e.getY(i); updatePower() }
+                // A drag that starts on the pause chip is a shot, not a tap.
+                if (pressedId == B_PAUSE && hypot(e.x - downX, e.y - downY) > slopPx && canAim) {
+                    pressedId = NONE
+                    startAim(downX, downY, e.getPointerId(0))
                 }
-                if (pressedId != NONE) { pressX = floor(toLX(e.x)).toInt(); pressY = floor(toLY(e.y)).toInt() }
+                if (aiming && !peeking) {
+                    val i = e.findPointerIndex(aimPointer)
+                    if (i >= 0) {
+                        curX = e.getX(i); curY = e.getY(i)
+                        if (hypot(curX - downX, curY - downY) > slopPx) aimMoved = true
+                        updatePower()
+                    }
+                }
+                if (pressedId != NONE) { pressX = lx; pressY = ly }
+                if (tapAnywhere && hypot(e.x - downX, e.y - downY) > slopPx) tapAnywhere = false
+                if (logoDownT >= 0f && hypot(e.x - downX, e.y - downY) > slopPx) logoDownT = -1f
             }
             MotionEvent.ACTION_POINTER_UP -> if (aiming && e.getPointerId(e.actionIndex) == aimPointer) {
-                aiming = false
-                curX = e.getX(e.actionIndex); curY = e.getY(e.actionIndex)
-                updatePower()
-                if (power > 0f) shoot()
+                finishAim(e.getX(e.actionIndex), e.getY(e.actionIndex))
             }
             MotionEvent.ACTION_UP -> {
                 if (aiming) {
-                    aiming = false
                     val i = e.findPointerIndex(aimPointer).coerceAtLeast(0)
-                    curX = e.getX(i); curY = e.getY(i)
-                    updatePower()
-                    if (power > 0f) shoot()
+                    finishAim(e.getX(i), e.getY(i))
                 }
                 val id = pressedId
                 pressedId = NONE
-                looking = false
-                if (id != NONE && id != B_LOOK && hitButton(floor(toLX(e.x)).toInt(), floor(toLY(e.y)).toInt()) == id) onButton(id)
+                if (id != NONE && hitButton(lx, ly) == id) onButton(id)
+                if (!swipeX.isNaN()) {
+                    val dx = e.x - swipeX
+                    if (abs(dx) > 36f * density && abs(dx) > abs(e.y - swipeY) * 1.5f) moveSelection(if (dx < 0) 1 else -1)
+                    swipeX = Float.NaN
+                }
+                if (tapAnywhere && id == NONE) { tapAnywhere = false; nextHole() }
+                if (tapOutside) { tapOutside = false; closeSheet(); sfx.tap() }
+                logoDownT = -1f
             }
-            MotionEvent.ACTION_CANCEL -> { aiming = false; pressedId = NONE; looking = false }
+            MotionEvent.ACTION_CANCEL -> {
+                aiming = false; peeking = false; pressedId = NONE; swipeX = Float.NaN
+                tapAnywhere = false; tapOutside = false; logoDownT = -1f
+            }
         }
         return true
+    }
+
+    private fun finishAim(x: Float, y: Float) {
+        aiming = false
+        if (peeking) { peeking = false; return } // a peek never shoots
+        curX = x; curY = y
+        updatePower()
+        if (power > 0f) shoot()
+    }
+
+    private fun moveSelection(d: Int) {
+        val next = (sel + d).coerceIn(0, n - 1)
+        if (next == sel) return
+        sel = next
+        selDir = d
+        selT = 0f
+        sfx.tap()
+        haptics.tap(this)
     }
 
     private fun onButton(id: Int) {
         sfx.tap()
         when (id) {
-            B_PLAY -> startCourse()
+            B_PLAY -> if (hasSavedRound) continueRound() else startCourse()
+            B_NEW -> startCourse()
             B_HOLES -> toSelect()
             B_BACK -> toTitle()
+            B_SETTINGS -> openSheet(Sheet.SETTINGS)
+            B_DONE -> closeSheet()
             B_SOUND -> { progress.sound = !progress.sound; sfx.enabled = progress.sound; sfx.tap() }
             B_BUZZ -> { progress.haptics = !progress.haptics; haptics.enabled = progress.haptics; haptics.tap(this) }
-            B_PAUSE -> { paused = true; aiming = false }
-            B_RESUME -> paused = false
+            B_LEFT -> progress.leftHanded = !progress.leftHanded
+            B_MOTION -> progress.reduceMotion = !progress.reduceMotion
+            B_PAUSE -> openSheet(Sheet.PAUSE)
+            B_RESUME -> closeSheet()
             B_RESTART -> { val i = holeIndex; fadeTo { loadHole(i); setMode(Mode.PLAY) } }
             B_QUIT -> toTitle()
             B_NEXT -> nextHole()
@@ -423,10 +545,9 @@ class GameView(
             B_SELECT -> toSelect()
             B_MENU -> toTitle()
             B_AGAIN -> startCourse()
-            else -> if (id >= B_HOLE0 && id < B_HOLE0 + n) {
-                val i = id - B_HOLE0
-                if (progress.unlocked(i)) practise(i) else sayUi("FINISH HOLE $i TO UNLOCK")
-            }
+            B_PREV_HOLE -> moveSelection(-1)
+            B_NEXT_HOLE -> moveSelection(1)
+            B_PLAY_HOLE -> if (progress.unlocked(sel)) practise(sel) else sayUi("FINISH HOLE $sel TO UNLOCK")
         }
     }
 
@@ -435,6 +556,7 @@ class GameView(
         if (courseRun && next >= n) {
             fadeTo {
                 courseNewBest = progress.recordCourse(course.name, scores.sum())
+                progress.clearRun()
                 setMode(Mode.FINAL)
             }
         } else if (next < n) {
@@ -482,7 +604,7 @@ class GameView(
     override fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) {
         sfx.wall(impact, pan(x), wood)
         if (time - lastWallHaptic > 0.04f) { haptics.wall(this, impact); lastWallHaptic = time }
-        if (impact > 170f) shakeT = 0f
+        if (impact > 170f && !reduceMotion) shakeT = 0f
         repeat((impact / 70f).toInt().coerceIn(1, 4)) {
             spawn(x, y, rnd.nextFloat() * 40f - 20f, rnd.nextFloat() * 40f - 20f, 0.3f,
                 if (wood) Palette.WOOD_LIGHT else Palette.STONE_LIGHT)
@@ -503,7 +625,7 @@ class GameView(
         strokes++ // penalty
         sfx.splash(pan(x))
         haptics.splash(this)
-        shakeT = 0f
+        if (!reduceMotion) shakeT = 0f
         repeat(16) {
             val a = rnd.nextFloat() * 2f * PI.toFloat()
             val s = 20f + rnd.nextFloat() * 45f
@@ -511,7 +633,7 @@ class GameView(
         }
         ring(x, y, 0.7f, 10f, Palette.FOAM)
         ring(x, y, 1.0f, 16f, Palette.SPARKLE)
-        say("+1 SPLASH", x, y - 6f, Palette.FOAM)
+        say("+1 SPLASH", x, y - 8f, Palette.FOAM)
         popT = 0f
         sfx.pop(pan(physics.x))
         for (i in 0 until tn) tAt[i] = -9f
@@ -520,7 +642,7 @@ class GameView(
     override fun onLipOut(x: Float, y: Float, speed: Float) {
         sfx.lipOut(pan(x))
         haptics.lipOut(this)
-        say("LIP OUT!", hole.cupX, hole.cupY - 18f, Palette.GOLD)
+        say("LIP OUT!", hole.cupX, hole.cupY - 20f, Palette.GOLD)
     }
 
     override fun onStop(x: Float, y: Float) {
@@ -533,7 +655,10 @@ class GameView(
         sinkT = 0f
         val toParHole = strokes - hole.par
         newBest = progress.record(holeIndex, strokes)
-        if (courseRun) scores[holeIndex] = strokes
+        if (courseRun) {
+            scores[holeIndex] = strokes
+            if (holeIndex + 1 < n) progress.saveRun(holeIndex + 1, scores)
+        }
         sfx.cup(pan(x), toParHole, strokes == 1)
         haptics.cup(this, toParHole < 0 || strokes == 1)
         ring(hole.cupX, hole.cupY, 0.6f, 8f, Palette.INK)
@@ -563,7 +688,7 @@ class GameView(
         msg = text; msgX = x; msgY = y; msgT = 0f; msgCol = col; msgUi = false
     }
 
-    /** A message in a strip near the bottom of the screen. */
+    /** A message in a strip just above the bottom sheet. */
     private fun sayUi(text: String) {
         msg = text; msgT = 0f; msgCol = Palette.INK; msgUi = true
     }
@@ -573,14 +698,28 @@ class GameView(
     private fun update(dt: Float) {
         time += dt
         modeT += dt
+        sheetT += dt
+        if (selT < 1f) selT = min(1f, selT + dt / 0.22f)
         if (fadeT >= 0f) {
             fadeT += dt
             if (!fadeDone && fadeT >= FADE) { fadeDone = true; fadeAction?.invoke(); fadeAction = null }
             if (fadeT >= 2 * FADE) fadeT = -1f
         }
-        val live = mode == Mode.PLAY && !paused
+        val live = mode == Mode.PLAY && sheet == Sheet.NONE
         if (live && fadeT < 0f) holeT += dt
         if (flyover && holeT > 1.6f) flyover = false
+
+        // Hold still to peek at the green.
+        if (aiming && !aimMoved && !peeking && power <= 0f && time - aimStartT > PEEK_HOLD) {
+            peeking = true
+            haptics.tap(this)
+        }
+        // Long-press the logo to show frame times.
+        if (logoDownT >= 0f && time - logoDownT > 1f) {
+            logoDownT = -1f
+            progress.debugOverlay = !progress.debugOverlay
+            haptics.tap(this)
+        }
 
         if (live && physics.moving) {
             acc += dt
@@ -600,7 +739,7 @@ class GameView(
 
         if (sinkT >= 0f) {
             sinkT += dt
-            if (sinkT > 1.1f && mode == Mode.PLAY) setMode(Mode.CARD)
+            if (sinkT > SINK_S && mode == Mode.PLAY) setMode(Mode.CARD)
         }
         if (mode == Mode.CARD) cardT += dt
         if (popT >= 0f) { popT += dt; if (popT > 0.5f) popT = -1f }
@@ -646,13 +785,13 @@ class GameView(
             focusX += (downX - curX) / len * power * 40f
             focusY += (downY - curY) / len * power * 40f
         }
-        if (looking || (flyover && mode == Mode.PLAY)) { focusX = hole.cupX; focusY = hole.cupY }
+        if (peeking || (flyover && mode == Mode.PLAY)) { focusX = hole.cupX; focusY = hole.cupY }
         val tx = if (hole.pxW <= lw) -((lw - hole.pxW) / 2).toFloat()
         else (focusX - lw / 2f).coerceIn(0f, (hole.pxW - lw).toFloat())
         val ty = if (hole.pxH <= playH) -(playTop + (playH - hole.pxH) / 2).toFloat()
         else (focusY - playTop - playH / 2f).coerceIn(-playTop.toFloat(), (hole.pxH - playBottom).toFloat())
         if (camSnap) { camX = tx; camY = ty; camSnap = false }
-        val k = 1f - exp(-(if (looking) 6f else 3.6f) * dt)
+        val k = 1f - exp(-(if (peeking) 6f else 3.6f) * dt)
         camX += (tx - camX) * k
         camY += (ty - camY) * k
         if (abs(tx - camX) < 0.02f) camX = tx
@@ -665,8 +804,10 @@ class GameView(
         val wb = world ?: return
         val ub = ui ?: return
         val now = SystemClock.uptimeMillis()
-        val dt = if (lastMs == 0L) 0f else ((now - lastMs) / 1000f).coerceIn(0f, 0.1f)
+        val dtMs = if (lastMs == 0L) 0L else now - lastMs
+        val dt = (dtMs / 1000f).coerceIn(0f, 0.1f)
         lastMs = now
+        if (dtMs > 0) { frameMs[frameNext] = dtMs.toFloat(); frameNext = (frameNext + 1) % frameMs.size }
         update(dt)
 
         val ix = floor(camX).toInt()
@@ -801,7 +942,7 @@ class GameView(
             val rise = (msgT * 8f).toInt()
             val a = if (msgT < 1f) 255 else (255 * (1f - (msgT - 1f) / 0.4f)).toInt()
             PixelFont.drawCentered(c, m, msgX.roundToInt() - ix, msgY.roundToInt() - iy - rise,
-                Palette.alpha(msgCol, a), 1, Palette.alpha(Palette.INK_SHADOW, a))
+                Palette.alpha(msgCol, a), 1, Palette.alpha(Palette.INK_SHADOW, a), PixelFont.Face.BIG)
         }
     }
 
@@ -824,7 +965,7 @@ class GameView(
         val dir = if (physics.vx + physics.vy >= 0f) 1 else -1
         Sprites.ball(c, x, y, ((rollDist / 2.5f).toInt() * dir) and 3)
         // An idle ball breathes a faint ring so it's easy to find.
-        if (mode == Mode.PLAY && !physics.moving && !aiming && !paused && !flyover) {
+        if (mode == Mode.PLAY && !physics.moving && !aiming && sheet == Sheet.NONE && !flyover) {
             val ph = (time * 0.8f) % 1f
             Pix.ring(c, x + 0.5f, y + 0.5f, 3f + ph * 6f, Palette.alpha(Palette.INK, (120 * (1f - ph)).toInt()))
         }
@@ -858,25 +999,39 @@ class GameView(
         val c = uc
         c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
         btnCount = 0
+        sheetRect.setEmpty()
         when (mode) {
             Mode.TITLE -> drawTitle(c)
             Mode.SELECT -> drawSelect(c)
-            Mode.PLAY -> { drawHud(c); if (paused) drawPause(c) else drawPlayUi(c) }
+            Mode.PLAY -> { drawHud(c); drawPlayUi(c) }
             Mode.CARD -> { drawHud(c); drawCard(c) }
             Mode.FINAL -> drawFinal(c)
+        }
+        when (sheet) {
+            Sheet.PAUSE -> drawPause(c)
+            Sheet.SETTINGS -> drawSettings(c)
+            Sheet.NONE -> {}
         }
         val m = msg
         if (m != null && msgUi) {
             val a = if (msgT < 1f) 255 else (255 * (1f - (msgT - 1f) / 0.4f)).toInt()
-            val y = lh - insetBottom - 44
-            rect(c, 0, y - 4, lw, 13, Palette.alpha(Palette.INK_SHADOW, 180 * a / 255))
-            PixelFont.drawCentered(c, m, lw / 2, y, Palette.alpha(msgCol, a), 1)
+            val y = (if (sheetRect.isEmpty) safeBottom - 40 else sheetRect.top - 16)
+            rect(c, 0, y - 4, lw, 15, Palette.alpha(Palette.INK_SHADOW, 200 * a / 255))
+            bigText(c, m, lw / 2, y, Palette.alpha(msgCol, a))
         }
+        if (progress.debugOverlay) drawFrameTimes(c)
         if (fadeT >= 0f) {
             val l = if (fadeT < FADE) fadeT / FADE else 1f - (fadeT - FADE) / FADE
             Pix.dissolve(c, lw, lh, l)
         }
     }
+
+    // Text helpers: big face for words, small face for dense grids.
+    private fun bigText(c: Canvas, s: String, cx: Int, y: Int, col: Int, scale: Int = 1, shadow: Int = 0) =
+        PixelFont.drawCentered(c, s, cx, y, col, scale, shadow, Face.BIG)
+
+    private fun smallText(c: Canvas, s: String, cx: Int, y: Int, col: Int) =
+        PixelFont.drawCentered(c, s, cx, y, col, 1, 0, Face.SMALL)
 
     private fun addButton(id: Int, x: Int, y: Int, w: Int, h: Int, pad: Int = 2) {
         if (btnCount >= maxButtons) return
@@ -891,83 +1046,94 @@ class GameView(
         return true
     }
 
-    /** A pixel button that drops a pixel while held. */
-    private fun button(c: Canvas, id: Int, x: Int, y: Int, w: Int, h: Int, text: String, style: Int = STYLE_NORMAL, textScale: Int = 1) {
+    /** A driftwood plank (primary) or paper tab (secondary) with a label that must fit. */
+    private fun button(c: Canvas, id: Int, x: Int, y: Int, w: Int, h: Int, text: String, primary: Boolean, on: Boolean = true) {
         addButton(id, x, y, w, h)
         val down = isPressed(id)
-        val face = when (style) {
-            STYLE_PRIMARY -> Palette.FAIR_B
-            STYLE_OFF -> Palette.STONE_DARK
-            else -> Palette.PANEL_EDGE
+        val face = if (PixelFont.width(text, 1, Face.BIG) <= w - 8) Face.BIG else Face.SMALL
+        if (PixelFont.width(text, 1, face) > w - 6) textOverflows += text
+        val th = face.h
+        val oy = if (down) 2 else 0
+        val ty = y + oy + (h - 2 - th) / 2
+        if (primary) {
+            Pix.plank(c, x, y, w, h, down, id)
+            PixelFont.drawCentered(c, text, x + w / 2, ty, Palette.PAPER[3], 1, Palette.WOOD_DARKER, face)
+        } else {
+            Pix.tab(c, x, y, w, h, down, on)
+            PixelFont.drawCentered(c, text, x + w / 2, ty, if (on) Palette.PAPER_INK else Palette.PAPER_INK_DIM, 1, 0, face)
         }
-        val oy = if (down) 1 else 0
-        if (!down) rect(c, x + 1, y + h - 1, w - 2, 2, Palette.INK_SHADOW)
-        rect(c, x + 1, y + oy, w - 2, h - 1, face)
-        rect(c, x, y + 1 + oy, w, h - 3, face)
-        rect(c, x + 1, y + oy, w - 2, 1, Palette.alpha(Palette.INK, if (down) 30 else 80))
-        val ty = y + oy + (h - 1 - PixelFont.H * textScale) / 2
-        PixelFont.drawCentered(c, text, x + w / 2, ty, Palette.INK, textScale, Palette.INK_SHADOW)
     }
 
-    private fun iconButton(c: Canvas, id: Int, x: Int, y: Int, w: Int, h: Int, draw: (Int) -> Unit) {
-        addButton(id, x, y, w, h, pad = 5)
+    /** An icon-only button: a paper tab with a one-colour sprite on it. */
+    private fun iconButton(c: Canvas, id: Int, x: Int, y: Int, w: Int, h: Int, icon: com.theprobyte.golfalone.render.Sprite, enabled: Boolean = true) {
+        addButton(id, x, y, w, h)
         val down = isPressed(id)
-        val o = if (down) 1 else 0
-        rect(c, x, y + o, w, h, Palette.alpha(Palette.PANEL_EDGE, if (down) 255 else 170))
-        draw(o)
+        Pix.tab(c, x, y, w, h, down, enabled)
+        val oy = if (down) 2 else 0
+        Sprites.icon(c, icon, x + (w - icon.w) / 2, y + oy + (h - 2 - icon.h) / 2, if (enabled) Palette.PAPER_INK else Palette.PAPER_INK_DIM)
+    }
+
+    /** A bottom sheet of paper sliding up to height [h]; returns its top edge. */
+    private fun bottomSheet(c: Canvas, h: Int, t: Float): Int {
+        val k = if (reduceMotion) 1f else easeOut(min(1f, t / 0.25f))
+        val top = lh - h + ((1f - k) * h).toInt()
+        Pix.paper(c, 0, top, lw, lh - top + 4)
+        sheetRect.set(0, top, lw, lh)
+        return top
+    }
+
+    private fun easeOut(k: Float) = 1f - (1f - k) * (1f - k) * (1f - k)
+
+    private fun easeOutBack(k: Float): Float =
+        if (reduceMotion) 1f else 1f + 2.2f * (k - 1f) * (k - 1f) * (k - 1f) + 1.2f * (k - 1f) * (k - 1f)
+
+    /** Rows of buttons laid from the safe bottom upwards. */
+    private fun rowY(fromBottom: Int): Int {
+        var y = safeBottom
+        for (i in 0..fromBottom) y -= if (i == 0) PRIMARY_H else SECONDARY_H + GAP
+        return y
     }
 
     private fun drawHud(c: Canvas) {
         val y = insetTop + 3
-        rect(c, 0, 0, lw, y + 8, Palette.alpha(Palette.INK_SHADOW, 160))
-        rect(c, 0, y + 8, lw, 1, Palette.alpha(Palette.INK_SHADOW, 70))
-        if (mode == Mode.PLAY) {
-            iconButton(c, B_PAUSE, 2, y - 2, 11, 9) { o -> Sprites.pauseIcon(c, 5, y - 1 + o, Palette.INK) }
-        }
+        rect(c, 0, 0, lw, y + 10, Palette.alpha(Palette.INK_SHADOW, 170))
+        rect(c, 0, y + 10, lw, 1, Palette.alpha(Palette.INK_SHADOW, 80))
         val holeText = "HOLE ${holeIndex + 1}/$n"
-        PixelFont.draw(c, holeText, 17, y, Palette.INK, 1, Palette.INK_SHADOW)
-        PixelFont.draw(c, "PAR ${hole.par}", 17 + PixelFont.width(holeText) + 6, y, Palette.INK_DIM, 1, Palette.INK_SHADOW)
-
-        var right = lw - 3
-        if (mode == Mode.PLAY && isLong()) {
-            val r = right
-            iconButton(c, B_LOOK, r - 11, y - 2, 11, 9) { o ->
-                Sprites.flagIcon(c, r - 8, y - 1 + o, if (looking) Palette.GOLD else Palette.FLAG, 7)
-            }
-            right -= 15
-        }
+        PixelFont.draw(c, holeText, 4, y, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
+        PixelFont.draw(c, "PAR ${hole.par}", 4 + PixelFont.width(holeText, 1, Face.BIG) + 6, y, Palette.INK_DIM, 1, Palette.INK_SHADOW, Face.BIG)
         val s = "SHOTS $strokes"
-        PixelFont.draw(c, s, right - PixelFont.width(s), y, if (strokes > hole.par) Palette.HOT else Palette.INK, 1, Palette.INK_SHADOW)
+        val sw = PixelFont.width(s, 1, Face.BIG)
+        PixelFont.draw(c, s, lw - 4 - sw, y, if (strokes > hole.par) Palette.HOT else Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
         if (courseRun) {
             val d = toPar()
             val t = parText(d)
-            val tw = PixelFont.width(t) + 4
-            val tx = right - PixelFont.width(s) - 5 - tw
-            rect(c, tx, y - 1, tw, 7, Palette.alpha(Palette.PANEL_EDGE, 220))
-            PixelFont.draw(c, t, tx + 2, y, if (d <= 0) Palette.GOLD else Palette.INK, 1)
+            val tw = PixelFont.width(t, 1, Face.BIG) + 4
+            val tx = lw - 4 - sw - 5 - tw
+            rect(c, tx, y - 1, tw, 9, Palette.alpha(Palette.PANEL_EDGE, 220))
+            PixelFont.draw(c, t, tx + 2, y, if (d <= 0) Palette.GOLD else Palette.INK, 1, 0, Face.BIG)
         }
     }
 
     private fun drawPlayUi(c: Canvas) {
-        // Hole banner while the round begins (and during the flyover).
+        // Hole banner while the round begins.
         if (holeT < 2.6f && strokes == 0) {
             val a = when {
                 holeT < 0.3f -> holeT / 0.3f
                 holeT > 2.1f -> 1f - (holeT - 2.1f) / 0.5f
                 else -> 1f
             }.coerceIn(0f, 1f)
-            // On long holes the flyover shows the green up top, so the banner sits low.
-            val y = if (isLong()) playBottom - 62 else playTop + 26
+            // Mid-screen, over fairway: greens sit up top and the tee at the bottom.
+            val y = (playTop + playBottom) / 2 - 18
             val ai = (255 * a).toInt()
             val sh = Palette.alpha(Palette.INK_SHADOW, ai)
-            rect(c, 0, y - 6, lw, 36, Palette.alpha(Palette.INK_SHADOW, (150 * a).toInt()))
-            PixelFont.drawCentered(c, "${course.name} * HOLE ${holeIndex + 1}", lw / 2, y, Palette.alpha(Palette.INK_DIM, ai), 1, sh)
-            PixelFont.drawCentered(c, hole.name, lw / 2, y + 8, Palette.alpha(Palette.INK, ai), 2, sh)
-            PixelFont.drawCentered(c, "PAR ${hole.par}", lw / 2, y + 21, Palette.alpha(Palette.GOLD, ai), 1, sh)
+            rect(c, 0, y - 10, lw, 46, Palette.alpha(Palette.INK_SHADOW, (160 * a).toInt()))
+            PixelFont.drawCentered(c, "${course.name} * HOLE ${holeIndex + 1}", lw / 2, y - 5, Palette.alpha(Palette.INK_DIM, ai), 1, sh, Face.BIG)
+            PixelFont.drawCentered(c, hole.name, lw / 2, y + 8, Palette.alpha(Palette.INK, ai), 2, sh, Face.BIG)
+            PixelFont.drawCentered(c, "PAR ${hole.par}", lw / 2, y + 25, Palette.alpha(Palette.GOLD, ai), 1, sh, Face.BIG)
         }
 
         // Rubber band from where you touched to your finger.
-        if (aiming) {
+        if (aiming && !peeking) {
             val ax = toLX(downX).roundToInt()
             val ay = toLY(downY).roundToInt()
             val fx = toLX(curX)
@@ -984,126 +1150,179 @@ class GameView(
             rect(c, fx.roundToInt() - 1, fy.roundToInt() - 1, 3, 3, Palette.alpha(col, 210))
             if (!cancel) {
                 val pct = "${(power * 100).roundToInt()}%"
-                PixelFont.draw(c, pct, ax + 7, ay - 2, if (power >= 1f) Palette.HOT else Palette.INK, 1, Palette.INK_SHADOW)
+                PixelFont.draw(c, pct, ax + 7, ay - 3, if (power >= 1f) Palette.HOT else Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
             }
         }
 
-        // Coaching until the first hole has ever been finished.
-        if (progress.best(0) == 0 && holeIndex == 0 && strokes == 0 && !physics.moving && holeT > 1f) {
-            val y = playBottom - 12
-            val pulse = (0.6f + 0.4f * sin(time * 3f)).coerceIn(0f, 1f)
-            val a = (255 * pulse).toInt()
-            val text = if (aiming) (if (power > 0f) "LET GO TO SHOOT" else "PULL BACK TO AIM") else "PULL BACK ANYWHERE TO AIM"
-            PixelFont.drawCentered(c, text, lw / 2, y, Palette.alpha(Palette.INK, a), 1, Palette.alpha(Palette.INK_SHADOW, a))
-            if (aiming && power > 0f) PixelFont.drawCentered(c, "DRAG BACK IN TO CANCEL", lw / 2, y + 8, Palette.alpha(Palette.INK_DIM, a), 1, Palette.alpha(Palette.INK_SHADOW, a))
+        // The pause chip: bottom corner on the thumb's side, above the Home-swipe zone.
+        if (sinkT < 0f) {
+            val cw = CHIP
+            val cx = if (progress.leftHanded) 6 else lw - 6 - cw
+            val cy = safeBottom - cw
+            addButton(B_PAUSE, cx, cy, cw, cw, pad = 3)
+            val down = isPressed(B_PAUSE)
+            Pix.chip(c, cx, cy, cw, cw, down)
+            Sprites.icon(c, Sprites.iconPause, cx + (cw - Sprites.iconPause.w) / 2, cy + (cw - Sprites.iconPause.h) / 2, Palette.INK)
         }
-        if (looking) PixelFont.drawCentered(c, "LOOKING AT THE GREEN", lw / 2, playBottom - 12, Palette.INK, 1, Palette.INK_SHADOW)
-        else if (flyover && holeT > 0.4f) PixelFont.drawCentered(c, "TAP TO SKIP", lw / 2, playBottom - 12, Palette.INK_DIM, 1, Palette.INK_SHADOW)
+
+        // Hints along the bottom.
+        val hy = safeBottom - CHIP - 14
+        val pulse = (0.6f + 0.4f * sin(time * 3f)).coerceIn(0f, 1f)
+        val a = (255 * pulse).toInt()
+        val sh = Palette.alpha(Palette.INK_SHADOW, a)
+        when {
+            peeking -> PixelFont.drawCentered(c, "PEEKING AT THE GREEN", lw / 2, hy, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
+            flyover && holeT > 0.4f -> PixelFont.drawCentered(c, "TAP TO SKIP", lw / 2, hy, Palette.INK_DIM, 1, Palette.INK_SHADOW, Face.BIG)
+            progress.best(0) == 0 && holeIndex == 0 && strokes == 0 && !physics.moving && holeT > 1f -> {
+                val text = if (aiming) (if (power > 0f) "LET GO TO SHOOT" else "PULL BACK TO AIM") else "PULL BACK ANYWHERE TO AIM"
+                PixelFont.drawCentered(c, text, lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
+            }
+            isLong() && strokes == 0 && !aiming && !physics.moving && holeT > 2.6f ->
+                PixelFont.drawCentered(c, "HOLD STILL TO PEEK", lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
+        }
     }
 
-    private fun toggleText(on: Boolean, name: String) = if (on) "$name ON" else "$name OFF"
+    private fun toggleLabel(on: Boolean) = if (on) "ON" else "OFF"
 
     private fun drawTitle(c: Canvas) {
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 140))
+        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 110))
         val a = (255 * min(1f, modeT / 0.5f)).toInt()
-        val top = (lh * 0.17f).toInt()
-        val bob = (sin(time * 1.2f) * 1.5f).roundToInt()
-        PixelFont.drawCentered(c, "GOLF", lw / 2, top + bob, Palette.alpha(Palette.INK, a), 6, Palette.alpha(Palette.INK_SHADOW, a))
-        PixelFont.drawCentered(c, "ALONE", lw / 2, top + 36 + bob, Palette.alpha(Palette.GOLD, a), 5, Palette.alpha(Palette.INK_SHADOW, a))
-        PixelFont.drawCentered(c, "A QUIET ISLAND COURSE", lw / 2, top + 68, Palette.alpha(Palette.INK_DIM, a), 1, Palette.INK_SHADOW)
+        val top = insetTop + 34
+        val bob = if (reduceMotion) 0 else (sin(time * 1.2f) * 1.5f).roundToInt()
+        val sh = Palette.alpha(Palette.INK_SHADOW, a)
+        PixelFont.drawCentered(c, "GOLF", lw / 2, top + bob, Palette.alpha(Palette.INK, a), 5, sh, Face.BIG)
+        PixelFont.drawCentered(c, "ALONE", lw / 2, top + 42 + bob, Palette.alpha(Palette.GOLD, a), 4, sh, Face.BIG)
+        Sprites.flagIcon(c, lw / 2 + 56, top + 20 + bob, Palette.FLAG, 14)
+        PixelFont.drawCentered(c, "A QUIET ISLAND COURSE", lw / 2, top + 76, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
 
-        val bw = 124
-        val bx = (lw - bw) / 2
-        var y = (lh * 0.52f).toInt()
-        button(c, B_PLAY, bx, y, bw, 22, "PLAY COURSE", STYLE_PRIMARY, 2)
+        // The sheet: course line, the main button, and a row of secondary ones.
+        val h = safeBottom.let { lh - it } + PRIMARY_H + GAP + SECONDARY_H + 30
+        val st = bottomSheet(c, h, modeT)
         val best = progress.courseBest(course.name)
-        val bestText = if (best == 0) "${course.name} * PAR ${course.par}" else "BEST $best (${parText(best - course.par)}) * PAR ${course.par}"
-        PixelFont.drawCentered(c, bestText, lw / 2, y + 27, Palette.INK_DIM, 1, Palette.INK_SHADOW)
-        y += 42
-        button(c, B_HOLES, bx, y, bw, 16, "PRACTISE A HOLE")
-
-        val by = lh - insetBottom - 26
-        val tw = 64
-        button(c, B_SOUND, lw / 2 - tw - 4, by, tw, 14, toggleText(progress.sound, "SOUND"), if (progress.sound) STYLE_NORMAL else STYLE_OFF)
-        button(c, B_BUZZ, lw / 2 + 4, by, tw, 14, toggleText(progress.haptics, "BUZZ"), if (progress.haptics) STYLE_NORMAL else STYLE_OFF)
+        val line = if (best == 0) "${course.name} * PAR ${course.par}" else "BEST $best (${parText(best - course.par)}) * PAR ${course.par}"
+        bigText(c, line, lw / 2, st + 9, Palette.PAPER_INK)
+        val pad = 8
+        val by = st + 22
+        val saved = hasSavedRound
+        button(c, B_PLAY, pad, by, lw - pad * 2, PRIMARY_H, if (saved) "CONTINUE HOLE ${progress.runHole + 1}" else "PLAY COURSE", true)
+        val ry = by + PRIMARY_H + GAP
+        if (saved) {
+            val gw = 30
+            val bw = (lw - pad * 2 - gw - GAP * 2) / 2
+            button(c, B_NEW, pad, ry, bw, SECONDARY_H, "NEW ROUND", false)
+            button(c, B_HOLES, pad + bw + GAP, ry, bw, SECONDARY_H, "PRACTISE", false)
+            iconButton(c, B_SETTINGS, lw - pad - gw, ry, gw, SECONDARY_H, Sprites.iconGear)
+        } else {
+            val bw = (lw - pad * 2 - GAP) / 2
+            button(c, B_HOLES, pad, ry, bw, SECONDARY_H, "PRACTISE", false)
+            button(c, B_SETTINGS, pad + bw + GAP, ry, bw, SECONDARY_H, "SETTINGS", false)
+        }
     }
 
-    private fun thumb(i: Int): Bitmap? {
+    /** A hole's thumbnail sized to fit [maxW]×[maxH], cached per box size. */
+    private fun thumb(i: Int, maxW: Int, maxH: Int): Bitmap? {
+        val box = (maxW.toLong() shl 32) or maxH.toLong()
+        if (box != thumbBox) { thumbs.fill(null); thumbBox = box }
         thumbs[i]?.let { return it }
         val f = terrains[i]
         if (!f.isDone) return null
         val t = f.get()
-        val step = max(ceil(t.w / 64f).toInt(), ceil(t.h / 62f).toInt()).coerceAtLeast(1)
+        val step = max(ceil(t.w / maxW.toFloat()).toInt(), ceil(t.h / maxH.toFloat()).toInt()).coerceAtLeast(1)
         return t.thumbnail(step).also { thumbs[i] = it }
     }
 
     private fun drawSelect(c: Canvas) {
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 200))
-        val top = insetTop + 4
-        button(c, B_BACK, 4, top, 22, 12, "<")
-        PixelFont.drawCentered(c, course.name, lw / 2 + 8, top + 3, Palette.INK, 1, Palette.INK_SHADOW)
-        val cols = 2
-        val gap = 6
-        val cw = (lw - gap * 3) / cols
-        val avail = playBottom - (top + 20)
-        val ch = min(118, (avail - gap * 2) / 3)
-        for (i in 0 until n) {
-            val col = i % cols
-            val row = i / cols
-            val x = gap + col * (cw + gap)
-            val y = top + 20 + row * (ch + gap)
-            val open = progress.unlocked(i)
-            addButton(B_HOLE0 + i, x, y, cw, ch, pad = 1)
-            val down = isPressed(B_HOLE0 + i)
-            val oy = if (down) 1 else 0
-            Pix.panel(c, x, y + oy, cw, ch, Palette.PANEL, if (down) Palette.GOLD else Palette.PANEL_EDGE)
-            // Thumbnail of the hole.
-            val tb = thumb(i)
-            val th = ch - 30
-            if (tb != null) {
-                val sx = x + (cw - tb.width) / 2
-                val sy = y + 4 + oy + max(0, (th - tb.height) / 2)
-                c.save()
-                c.clipRect(x + 2, y + 3 + oy, x + cw - 2, y + 4 + th + oy)
-                c.drawBitmap(tb, sx.toFloat(), sy.toFloat(), blit)
-                c.restore()
-            }
+        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 190))
+        PixelFont.drawCentered(c, course.name, lw / 2, insetTop + 6, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
+
+        val sheetH = lh - safeBottom + PRIMARY_H + GAP + SECONDARY_H + 34
+        val previewTop = insetTop + 20
+        val previewBottom = lh - sheetH - 14
+        val boxH = previewBottom - previewTop
+        // The selected hole slides in from the side it came from.
+        val k = if (reduceMotion) 1f else easeOut(selT)
+        val slide = ((1f - k) * lw * 0.6f * selDir).toInt()
+        val open = progress.unlocked(sel)
+        // The hole's map, at full size where it fits, in a paper frame sized to it.
+        val tb = thumb(sel, lw - 16, boxH - 8)
+        if (tb != null) {
+            val fw = tb.width + 8
+            val fh = tb.height + 8
+            val fx = (lw - fw) / 2 + slide
+            val fy = previewTop + (boxH - fh) / 2
+            Pix.paper(c, fx, fy, fw, fh, perforated = false)
+            c.drawBitmap(tb, (fx + 4).toFloat(), (fy + 4).toFloat(), if (open) blit else dim)
             if (!open) {
-                rect(c, x + 2, y + 3 + oy, cw - 4, th + 1, Palette.alpha(Palette.INK_SHADOW, 170))
-                Sprites.lockIcon(c, x + cw / 2 - 2, y + th / 2 + oy, Palette.INK_DIM)
+                val lk = Sprites.iconLock
+                Pix.chip(c, fx + fw / 2 - 9, fy + fh / 2 - 9, 18, 18, false)
+                Sprites.icon(c, lk, fx + fw / 2 - lk.w / 2, fy + fh / 2 - lk.h / 2, Palette.INK)
             }
-            val ty = y + th + 8 + oy
-            PixelFont.drawCentered(c, "${i + 1}. ${course.holes[i].name}", x + cw / 2, ty, if (open) Palette.INK else Palette.INK_DIM, 1)
-            val best = progress.best(i)
-            val info = if (best == 0) "PAR ${course.holes[i].par}" else "PAR ${course.holes[i].par} * BEST $best"
-            PixelFont.drawCentered(c, info, x + cw / 2, ty + 8, Palette.INK_DIM, 1)
-            if (best > 0) Sprites.flagIcon(c, x + cw - 10, y + 5 + oy, flagColour(best, course.holes[i].par))
         }
+        // Dots.
+        val dy = previewBottom + 5
+        for (i in 0 until n) {
+            val x = lw / 2 - n * 4 + i * 8 + 2
+            rect(c, x, dy, 4, 4, if (i == sel) Palette.GOLD else Palette.alpha(Palette.INK, 90))
+        }
+
+        val st = bottomSheet(c, sheetH, 1f)
+        val h = course.holes[sel]
+        PixelFont.drawCentered(c, "${sel + 1}. ${h.name}", lw / 2, st + 8, Palette.PAPER_INK, 1, 0, Face.BIG)
+        val best = progress.best(sel)
+        val info = if (!open) "PAR ${h.par} * LOCKED" else if (best == 0) "PAR ${h.par} * NOT PLAYED" else "PAR ${h.par} * BEST $best"
+        PixelFont.drawCentered(c, info, lw / 2, st + 19, Palette.PAPER_INK_DIM, 1, 0, Face.BIG)
+        if (best > 0) Sprites.flagIcon(c, lw - 20, st + 8, flagColour(best, h.par), 10)
+        val pad = 8
+        val aw = 30
+        val by = st + 32
+        iconButton(c, B_PREV_HOLE, pad, by, aw, PRIMARY_H, Sprites.iconLeft, sel > 0)
+        button(c, B_PLAY_HOLE, pad + aw + GAP, by, lw - pad * 2 - aw * 2 - GAP * 2, PRIMARY_H, if (open) "PLAY HOLE" else "LOCKED", open)
+        iconButton(c, B_NEXT_HOLE, lw - pad - aw, by, aw, PRIMARY_H, Sprites.iconRight, sel < n - 1)
+        button(c, B_BACK, pad, by + PRIMARY_H + GAP, lw - pad * 2, SECONDARY_H, "BACK", false)
     }
 
     private fun flagColour(strokes: Int, par: Int) = when {
         strokes == 1 -> Palette.FLAG
         strokes <= par -> Palette.GOLD
-        else -> Palette.INK
+        else -> Palette.PAPER[1]
     }
 
     private fun drawPause(c: Canvas) {
-        rect(c, 0, playTop - 3, lw, lh, Palette.alpha(Palette.INK_SHADOW, 150))
-        val w = 132
-        val h = 132
-        val x = (lw - w) / 2
-        val y = (lh - h) / 2
-        Pix.panel(c, x, y, w, h)
-        PixelFont.drawCentered(c, "PAUSED", lw / 2, y + 8, Palette.INK, 2, Palette.INK_SHADOW)
-        val bw = w - 24
-        var by = y + 26
-        button(c, B_RESUME, x + 12, by, bw, 16, "RESUME", STYLE_PRIMARY); by += 21
-        button(c, B_RESTART, x + 12, by, bw, 16, "RESTART HOLE"); by += 21
-        val hw = (bw - 4) / 2
-        button(c, B_SOUND, x + 12, by, hw, 16, toggleText(progress.sound, "SOUND"), if (progress.sound) STYLE_NORMAL else STYLE_OFF)
-        button(c, B_BUZZ, x + 12 + hw + 4, by, hw, 16, toggleText(progress.haptics, "BUZZ"), if (progress.haptics) STYLE_NORMAL else STYLE_OFF)
-        by += 21
-        button(c, B_QUIT, x + 12, by, bw, 16, if (courseRun) "QUIT ROUND" else "QUIT TO MENU")
+        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 120))
+        val restartAllowed = !courseRun // a restart in a round would be a free mulligan
+        val rows = if (restartAllowed) 2 else 1
+        val h = lh - safeBottom + PRIMARY_H + rows * (SECONDARY_H + GAP) + 30
+        val st = bottomSheet(c, h, sheetT)
+        PixelFont.drawCentered(c, "PAUSED", lw / 2, st + 8, Palette.PAPER_INK, 2, 0, Face.BIG)
+        val pad = 8
+        var y = st + 26
+        val bw = (lw - pad * 2 - GAP) / 2
+        button(c, B_SETTINGS, pad, y, bw, SECONDARY_H, "SETTINGS", false)
+        button(c, B_QUIT, pad + bw + GAP, y, bw, SECONDARY_H, if (courseRun) "SAVE + QUIT" else "QUIT", false)
+        y += SECONDARY_H + GAP
+        if (restartAllowed) {
+            button(c, B_RESTART, pad, y, lw - pad * 2, SECONDARY_H, "RESTART HOLE", false)
+            y += SECONDARY_H + GAP
+        }
+        button(c, B_RESUME, pad, y, lw - pad * 2, PRIMARY_H, "RESUME", true)
+    }
+
+    private fun drawSettings(c: Canvas) {
+        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 140))
+        val h = lh - safeBottom + PRIMARY_H + 4 * (SECONDARY_H + GAP) + 30
+        val st = bottomSheet(c, h, sheetT)
+        PixelFont.drawCentered(c, "SETTINGS", lw / 2, st + 8, Palette.PAPER_INK, 2, 0, Face.BIG)
+        val pad = 8
+        var y = st + 26
+        fun toggle(id: Int, label: String, on: Boolean) {
+            button(c, id, pad, y, lw - pad * 2, SECONDARY_H, "$label: ${toggleLabel(on)}", false, on)
+            y += SECONDARY_H + GAP
+        }
+        toggle(B_SOUND, "SOUND", progress.sound)
+        toggle(B_BUZZ, "VIBRATION", progress.haptics)
+        toggle(B_LEFT, "LEFT-HANDED", progress.leftHanded)
+        toggle(B_MOTION, "REDUCE MOTION", progress.reduceMotion)
+        button(c, B_DONE, pad, y, lw - pad * 2, PRIMARY_H, "DONE", true)
     }
 
     private fun resultWord(strokes: Int, par: Int): String {
@@ -1120,107 +1339,112 @@ class GameView(
         }
     }
 
-    private fun easeOutBack(k: Float): Float = 1f + 2.2f * (k - 1f) * (k - 1f) * (k - 1f) + 1.2f * (k - 1f) * (k - 1f)
+    private fun resultInk(strokes: Int, par: Int) = when {
+        strokes < par || strokes == 1 -> Palette.STAMP_RED
+        strokes == par -> Palette.PAPER_INK
+        else -> Palette.PAPER_INK_DIM
+    }
 
     private fun drawCard(c: Canvas) {
-        val k = min(1f, cardT / 0.45f)
-        val w = 156
-        val h = if (courseRun) 128 else 104
-        val x = (lw - w) / 2
-        val y = ((lh - h) / 2 + (1f - easeOutBack(k)) * lh * 0.7f).toInt()
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, (110 * k).toInt()))
-        Pix.panel(c, x, y, w, h)
+        val k = min(1f, cardT / 0.3f)
+        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, (90 * k).toInt()))
+        val stripH = if (courseRun) 32 + 14 else 0 // the round strip, plus room for the tap hint
+        val buttonsH = if (courseRun) PRIMARY_H else PRIMARY_H + GAP + SECONDARY_H
+        val h = lh - safeBottom + buttonsH + stripH + 76
+        val st = bottomSheet(c, h, cardT)
 
-        val good = strokes <= hole.par
         val word = resultWord(strokes, hole.par)
-        val ws = if (PixelFont.width(word, 2) <= w - 12) 2 else 1
-        PixelFont.drawCentered(c, word, lw / 2, y + 9, if (good) Palette.GOLD else Palette.INK, ws, Palette.INK_SHADOW)
-        Sprites.flagIcon(c, lw / 2 - 3, y + 25, flagColour(strokes, hole.par), 11)
-        PixelFont.drawCentered(c, "$strokes ${if (strokes == 1) "SHOT" else "SHOTS"} * PAR ${hole.par}", lw / 2, y + 41, Palette.INK, 1, Palette.INK_SHADOW)
-        if (newBest) {
-            if ((cardT * 3f % 1f) < 0.75f) PixelFont.drawCentered(c, "NEW BEST!", lw / 2, y + 50, Palette.GOLD, 1, Palette.INK_SHADOW)
-        } else PixelFont.drawCentered(c, "BEST ${progress.best(holeIndex)}", lw / 2, y + 50, Palette.INK_DIM, 1, Palette.INK_SHADOW)
+        val ws = if (PixelFont.width(word, 2, Face.BIG) <= lw - 16) 2 else 1
+        val wy = st + 10 + ((1f - easeOutBack(min(1f, cardT / 0.35f))) * 6).toInt()
+        PixelFont.drawCentered(c, word, lw / 2, wy, resultInk(strokes, hole.par), ws, 0, Face.BIG)
+        Sprites.flagIcon(c, lw / 2 - 3, st + 28, flagColour(strokes, hole.par), 11)
+        bigText(c, "$strokes ${if (strokes == 1) "SHOT" else "SHOTS"} * PAR ${hole.par}", lw / 2, st + 44, Palette.PAPER_INK)
+        if (newBest) bigText(c, "NEW BEST!", lw / 2, st + 55, Palette.STAMP_RED)
+        else bigText(c, "BEST ${progress.best(holeIndex)}", lw / 2, st + 55, Palette.PAPER_INK_DIM)
 
-        var by = y + 62
+        var y = st + 68
         if (courseRun) {
             // The round so far.
-            val bw = 20
+            val bw = 22
             val sx = lw / 2 - (n * (bw + 2) - 2) / 2
             for (i in 0 until n) {
                 val bx = sx + i * (bw + 2)
-                rect(c, bx, by, bw, 15, if (i == holeIndex) Palette.GOLD else Palette.PANEL_EDGE)
-                rect(c, bx + 1, by + 1, bw - 2, 13, Palette.INK_SHADOW)
-                PixelFont.drawCentered(c, "${i + 1}", bx + bw / 2, by + 2, Palette.INK_DIM, 1)
+                rect(c, bx, y, bw, 17, if (i == holeIndex) Palette.STAMP_RED else Palette.PAPER[1])
+                rect(c, bx + 1, y + 1, bw - 2, 15, Palette.PAPER[3])
+                smallText(c, "${i + 1}", bx + bw / 2, y + 2, Palette.PAPER_INK_DIM)
                 val s = scores[i]
-                if (s > 0) PixelFont.drawCentered(c, "$s", bx + bw / 2, by + 8, if (s <= course.holes[i].par) Palette.GOLD else Palette.INK, 1)
-                else PixelFont.drawCentered(c, "-", bx + bw / 2, by + 8, Palette.INK_DIM, 1)
+                val p = course.holes[i].par
+                smallText(c, if (s > 0) "$s" else "-", bx + bw / 2, y + 9, if (s in 1..p) Palette.STAMP_RED else Palette.PAPER_INK)
             }
-            by += 20
-            PixelFont.drawCentered(c, "ROUND ${parText(toPar())}", lw / 2, by, if (toPar() <= 0) Palette.GOLD else Palette.INK, 1, Palette.INK_SHADOW)
-            by += 12
+            y += 22
+            bigText(c, "ROUND ${parText(toPar())}", lw / 2, y, if (toPar() <= 0) Palette.STAMP_RED else Palette.PAPER_INK)
+            y += 12
         }
-        if (cardT < 0.5f) return
+        if (cardT < 0.35f) return
+        val pad = 8
         if (courseRun) {
             val last = holeIndex == n - 1
-            button(c, B_NEXT, x + 12, by, w - 24, 18, if (last) "SEE SCORECARD" else "NEXT HOLE", STYLE_PRIMARY)
+            button(c, B_NEXT, pad, safeBottom - PRIMARY_H, lw - pad * 2, PRIMARY_H, if (last) "SEE SCORECARD" else "NEXT HOLE", true)
+            if (cardT > 0.4f) bigText(c, "OR TAP ANYWHERE", lw / 2, safeBottom - PRIMARY_H - 11, Palette.PAPER_INK_DIM)
         } else {
-            val bw = (w - 24 - 8) / 3
-            button(c, B_RETRY, x + 12, by + 4, bw, 18, "RETRY")
-            if (holeIndex < n - 1) button(c, B_NEXT, x + 12 + bw + 4, by + 4, bw, 18, "NEXT", STYLE_PRIMARY)
-            button(c, B_SELECT, x + 12 + (bw + 4) * 2, by + 4, bw, 18, "HOLES")
+            val bw = (lw - pad * 2 - GAP) / 2
+            val ry = safeBottom - PRIMARY_H - GAP - SECONDARY_H
+            button(c, B_RETRY, pad, ry, bw, SECONDARY_H, "RETRY", false)
+            button(c, B_SELECT, pad + bw + GAP, ry, bw, SECONDARY_H, "HOLES", false)
+            val last = holeIndex == n - 1
+            button(c, if (last) B_SELECT else B_NEXT, pad, safeBottom - PRIMARY_H, lw - pad * 2, PRIMARY_H, if (last) "BACK TO HOLES" else "NEXT HOLE", true)
         }
     }
 
     private fun drawFinal(c: Canvas) {
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 170))
-        val k = min(1f, modeT / 0.45f)
-        val w = 170
-        val h = 176
-        val x = (lw - w) / 2
-        val y = ((lh - h) / 2 + (1f - easeOutBack(k)) * lh * 0.6f).toInt()
-        Pix.panel(c, x, y, w, h)
-        PixelFont.drawCentered(c, course.name, lw / 2, y + 7, Palette.INK_DIM, 1, Palette.INK_SHADOW)
+        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 150))
+        val h = lh - safeBottom + PRIMARY_H + 160
+        val st = bottomSheet(c, h, modeT)
+        smallText(c, course.name, lw / 2, st + 7, Palette.PAPER_INK_DIM)
+        PixelFont.drawCentered(c, "SCORECARD", lw / 2, st + 15, Palette.PAPER_INK, 2, 0, Face.BIG)
         val total = scores.sum()
         val d = total - course.par
-        PixelFont.drawCentered(c, "SCORECARD", lw / 2, y + 16, Palette.INK, 2, Palette.INK_SHADOW)
 
-        // Table: label column, six holes, total.
-        val lx = x + 6
-        val cw = 18
-        val cx0 = x + 26
-        var ry = y + 36
+        // Table: label column, six holes, total, on ruled paper.
+        val lx = 8
+        val cw = 20
+        val cx0 = 32
+        var ry = st + 38
+        Pix.ruled(c, 4, ry + 7, lw - 8, 30, 10)
         fun row(label: String, cell: (Int) -> Pair<String, Int>, tot: Pair<String, Int>) {
-            PixelFont.draw(c, label, lx, ry, Palette.INK_DIM, 1)
+            PixelFont.draw(c, label, lx, ry, Palette.PAPER_INK_DIM, 1, 0, Face.SMALL)
             for (i in 0 until n) {
                 val (t, cl) = cell(i)
-                PixelFont.drawCentered(c, t, cx0 + i * cw + cw / 2, ry, cl, 1)
+                smallText(c, t, cx0 + i * cw + cw / 2, ry, cl)
             }
-            PixelFont.drawCentered(c, tot.first, cx0 + n * cw + 14, ry, tot.second, 1)
+            smallText(c, tot.first, cx0 + n * cw + 12, ry, tot.second)
             ry += 10
         }
-        row("HOLE", { i -> "${i + 1}" to Palette.INK_DIM }, "TOT" to Palette.INK_DIM)
-        rect(c, x + 4, ry - 3, w - 8, 1, Palette.PANEL_EDGE)
-        row("PAR", { i -> "${course.holes[i].par}" to Palette.INK }, "${course.par}" to Palette.INK)
-        row("YOU", { i ->
-            val s = scores[i]
-            val p = course.holes[i].par
-            "$s" to (if (s == 1) Palette.FLAG else if (s < p) Palette.GOLD else if (s == p) Palette.INK else Palette.HOT)
-        }, "$total" to (if (d <= 0) Palette.GOLD else Palette.INK))
-        // Flags earned.
+        row("HOLE", { i -> "${i + 1}" to Palette.PAPER_INK_DIM }, "TOT" to Palette.PAPER_INK_DIM)
+        row("PAR", { i -> "${course.holes[i].par}" to Palette.PAPER_INK }, "${course.par}" to Palette.PAPER_INK)
+        row("YOU", { i -> "${scores[i]}" to resultInk(scores[i], course.holes[i].par) }, "$total" to (if (d <= 0) Palette.STAMP_RED else Palette.PAPER_INK))
         for (i in 0 until n) Sprites.flagIcon(c, cx0 + i * cw + cw / 2 - 2, ry, flagColour(scores[i], course.holes[i].par), 8)
         ry += 16
-
-        PixelFont.drawCentered(c, "${parText(d)} * $total SHOTS", lw / 2, ry, if (d <= 0) Palette.GOLD else Palette.INK, 2, Palette.INK_SHADOW)
-        ry += 16
+        PixelFont.drawCentered(c, "${parText(d)} * $total SHOTS", lw / 2, ry, if (d <= 0) Palette.STAMP_RED else Palette.PAPER_INK, 2, 0, Face.BIG)
+        ry += 20
         val best = progress.courseBest(course.name)
-        if (courseNewBest) {
-            if ((modeT * 3f % 1f) < 0.75f) PixelFont.drawCentered(c, "NEW COURSE BEST!", lw / 2, ry, Palette.GOLD, 1, Palette.INK_SHADOW)
-        } else PixelFont.drawCentered(c, "COURSE BEST $best (${parText(best - course.par)})", lw / 2, ry, Palette.INK_DIM, 1, Palette.INK_SHADOW)
-        ry += 14
-        if (modeT < 0.5f) return
-        val bw = (w - 28) / 2
-        button(c, B_AGAIN, x + 10, ry, bw, 18, "PLAY AGAIN", STYLE_PRIMARY)
-        button(c, B_MENU, x + 18 + bw, ry, bw, 18, "MENU")
+        if (courseNewBest) bigText(c, "NEW COURSE BEST!", lw / 2, ry, Palette.STAMP_RED)
+        else bigText(c, "COURSE BEST $best (${parText(best - course.par)})", lw / 2, ry, Palette.PAPER_INK_DIM)
+        if (modeT < 0.4f) return
+        val pad = 8
+        val bw = (lw - pad * 2 - GAP) / 3
+        button(c, B_MENU, pad, safeBottom - PRIMARY_H, bw, PRIMARY_H, "MENU", false)
+        button(c, B_AGAIN, pad + bw + GAP, safeBottom - PRIMARY_H, lw - pad * 2 - bw - GAP, PRIMARY_H, "PLAY AGAIN", true)
+    }
+
+    private fun drawFrameTimes(c: Canvas) {
+        val sorted = frameMs.filter { it > 0f }.sorted()
+        if (sorted.isEmpty()) return
+        val p50 = sorted[sorted.size / 2]
+        val p95 = sorted[(sorted.size * 95 / 100).coerceAtMost(sorted.size - 1)]
+        val t = "FRAME ${"%.1f".format(p50)}MS  P95 ${"%.1f".format(p95)}"
+        rect(c, 0, insetTop + 14, PixelFont.width(t) + 6, 9, Palette.alpha(Palette.INK_SHADOW, 200))
+        PixelFont.draw(c, t, 3, insetTop + 16, Palette.GOLD)
     }
 
     // ---------------------------------------------------------------- tests
@@ -1233,8 +1457,10 @@ class GameView(
     internal val scoresForTest get() = scores.copyOf()
     internal val busy get() = fadeT >= 0f || flyover
     internal val fading get() = fadeT >= 0f
+    internal val isPaused get() = sheet == Sheet.PAUSE
+    internal val isPeeking get() = peeking
+    internal val selectedHole get() = sel
     internal val messageForTest get() = msg
-    internal val isPaused get() = paused
     internal val dragRangePx get() = cancelPx to maxDragPx
     internal val logicalSize get() = Triple(lw, lh, scale)
 
@@ -1247,13 +1473,30 @@ class GameView(
         return null
     }
 
+    /** Height in dp and top edge (fraction of the screen) of button [id], for the reach checks. */
+    internal fun buttonMetrics(id: Int): Pair<Float, Float>? {
+        for (i in 0 until btnCount) if (btnIds[i] == id) {
+            val r = btnHit[i]
+            return (r.height() * scale / density) to (r.top / lh.toFloat())
+        }
+        return null
+    }
+
     companion object {
         const val LOGICAL_W = 180
-        const val HUD_H = 12
+        const val HUD_H = 14
         const val GULL_SPEED = 26f
         const val FADE = 0.28f
         const val LONG_SCROLL = 64
+        const val SINK_S = 0.7f
+        const val PEEK_HOLD = 0.35f
         const val MAX_STEPS_PER_FRAME = Physics.HZ / 8
+
+        /** Button heights in logical px: 26 ≈ 60 dp, 22 ≈ 50 dp on a 1080-wide Pixel. */
+        const val PRIMARY_H = 26
+        const val SECONDARY_H = 22
+        const val GAP = 4
+        const val CHIP = 22
 
         const val NONE = -1
         const val B_PLAY = 1
@@ -1270,11 +1513,13 @@ class GameView(
         const val B_SELECT = 12
         const val B_MENU = 13
         const val B_AGAIN = 14
-        const val B_LOOK = 15
-        const val B_HOLE0 = 100
-
-        private const val STYLE_NORMAL = 0
-        private const val STYLE_PRIMARY = 1
-        private const val STYLE_OFF = 2
+        const val B_SETTINGS = 16
+        const val B_DONE = 17
+        const val B_LEFT = 18
+        const val B_MOTION = 19
+        const val B_NEW = 20
+        const val B_PREV_HOLE = 21
+        const val B_NEXT_HOLE = 22
+        const val B_PLAY_HOLE = 23
     }
 }

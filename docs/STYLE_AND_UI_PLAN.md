@@ -1,7 +1,18 @@
 # Golf Alone: pixel-art style and thumb-first UI
 
-> **Status:** plan only. This pass comes **before M3** (the tide). Strike or reorder
-> anything by ID.
+> **Status:** S1 to S3 are built, with the recommended choices: D1 = B (3/4 view), D2 = B (scorecard
+> paper and driftwood), D3 = keep 6× with a 6 px ball. The direction was approved up front, so
+> there was no separate one-hole slice. Where the build differs from this plan:
+> - **Pause chip (U4)** sits in the bottom corner on the thumb's side: right by default, left
+>   when left-handed is on.
+> - **Restart (U10)** is hidden during a round. The pause sheet offers **Save + Quit**, and the
+>   title then shows **Continue hole N** (U9).
+> - **3×5 face (T2):** a redrawn N turned into a solid block at that size, so every word now
+>   uses the 5×7 face. The 3×5 face is left for digits and the scorecard labels only.
+> - **Not done yet:** time-of-day palettes (P10, moved to M3/M4), the "maybe" aim aids (U11),
+>   and redrawing the UI layer only when it changes (part of E1; the glyph atlas is done).
+> - **E3 is unmeasured on a device.** Long-press the title logo for a second to show frame
+>   times (E2).
 >
 > **Style board:** [`docs/style/style-board.png`](style/style-board.png) is 1080 px wide, so on a
 > Pixel one square is one game pixel at true size. The "today" crops are real 1:1 screenshots;
