@@ -87,6 +87,13 @@ class UiPlaythroughTest {
     @Test fun playHoleOneToTheScorecard() {
         val act = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         game = act.game
+        // Pixel-like system bars and gesture-navigation zones.
+        val insets = android.view.WindowInsets.Builder()
+            .setInsets(android.view.WindowInsets.Type.statusBars(), android.graphics.Insets.of(0, 63, 0, 0))
+            .setInsets(android.view.WindowInsets.Type.navigationBars(), android.graphics.Insets.of(0, 0, 0, 42))
+            .setInsets(android.view.WindowInsets.Type.systemGestures(), android.graphics.Insets.of(80, 0, 80, 84))
+            .build()
+        game.dispatchApplyWindowInsets(insets)
         run(600)
         val (lw, lh, scale) = game.logicalSize
         println("logical ${lw}x$lh at ${scale}x for ${game.width}x${game.height}")
@@ -97,6 +104,15 @@ class UiPlaythroughTest {
         assertEquals(GameView.Mode.PLAY, game.mode)
         run(700)
         frame("02-tee")
+
+        // A pull that starts in the left gesture zone is left to the system (Back): no shot.
+        touch(MotionEvent.ACTION_DOWN, 20f, game.height * 0.5f)
+        touch(MotionEvent.ACTION_MOVE, 400f, game.height * 0.5f)
+        run(32)
+        touch(MotionEvent.ACTION_UP, 400f, game.height * 0.5f)
+        run(64)
+        assertEquals(0, game.strokesForTest)
+        assertFalse(game.ballMoving)
 
         val plan = ShotPlanner(game.hole).solve(game.hole.par)!!
         plan.shots.forEachIndexed { i, s ->

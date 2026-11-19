@@ -178,8 +178,8 @@ class GameView(
         scale = max(1, (w / LOGICAL_W.toFloat()).roundToInt())
         lw = ceil(w / scale.toFloat()).toInt()
         lh = ceil(h / scale.toFloat()).toInt()
-        offX = (w - lw * scale) / 2f
-        offY = (h - lh * scale) / 2f
+        offX = ((w - lw * scale) / 2).toFloat()
+        offY = ((h - lh * scale) / 2).toFloat()
         world?.recycle(); ui?.recycle()
         world = Bitmap.createBitmap(lw + 1, lh + 1, Bitmap.Config.ARGB_8888).also { wc.setBitmap(it) }
         ui = Bitmap.createBitmap(lw, lh, Bitmap.Config.ARGB_8888).also { uc.setBitmap(it) }
@@ -229,24 +229,39 @@ class GameView(
     private fun toLX(sx: Float) = (sx - offX) / scale
     private fun toLY(sy: Float) = (sy - offY) / scale
 
+    /** The finger that started the aim; other fingers are ignored. */
+    private var aimPointer = -1
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (mode == Mode.PLAY && !physics.moving && !physics.inCup && !inGestureZone(e.x, e.y)) {
                     aiming = true
+                    aimPointer = e.getPointerId(0)
                     downX = e.x; downY = e.y; curX = e.x; curY = e.y
                     power = 0f; tickStep = 0
                 }
             }
             MotionEvent.ACTION_MOVE -> if (aiming) {
-                curX = e.x; curY = e.y
+                val i = e.findPointerIndex(aimPointer)
+                if (i >= 0) {
+                    curX = e.getX(i); curY = e.getY(i)
+                    updatePower()
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> if (aiming && e.getPointerId(e.actionIndex) == aimPointer) {
+                // The aiming finger lifted while another stays down: shoot from where it let go.
+                aiming = false
+                curX = e.getX(e.actionIndex); curY = e.getY(e.actionIndex)
                 updatePower()
+                if (power > 0f) shoot()
             }
             MotionEvent.ACTION_UP -> {
                 when (mode) {
                     Mode.PLAY -> if (aiming) {
                         aiming = false
-                        curX = e.x; curY = e.y
+                        val i = e.findPointerIndex(aimPointer).coerceAtLeast(0)
+                        curX = e.getX(i); curY = e.getY(i)
                         updatePower()
                         if (power > 0f) shoot()
                     }
@@ -266,8 +281,10 @@ class GameView(
         if (step > tickStep) {
             haptics.tension(this, step, step >= 10)
             sfx.tension(step, step >= 10)
+            tickStep = step
+        } else if (power * 10f < tickStep - 0.6f) {
+            tickStep = step // re-arm only once clearly back below, so a resting finger doesn't buzz
         }
-        tickStep = step
     }
 
     private fun shoot() {
@@ -458,14 +475,16 @@ class GameView(
             leadX = (downX - curX) / len * power * 40f
             lead = (downY - curY) / len * power * 40f
         }
-        val tx = if (hole.pxW <= lw) -(lw - hole.pxW) / 2f
+        val tx = if (hole.pxW <= lw) -((lw - hole.pxW) / 2).toFloat()
         else (physics.x + leadX - lw / 2f).coerceIn(0f, (hole.pxW - lw).toFloat())
-        val ty = if (hole.pxH <= playH) -(playTop + (playH - hole.pxH) / 2f)
+        val ty = if (hole.pxH <= playH) -(playTop + (playH - hole.pxH) / 2).toFloat()
         else (physics.y + lead - playTop - playH / 2f).coerceIn(-playTop.toFloat(), (hole.pxH - playBottom).toFloat())
         if (camSnap) { camX = tx; camY = ty; camSnap = false }
         val k = 1f - exp(-5f * dt)
         camX += (tx - camX) * k
         camY += (ty - camY) * k
+        if (kotlin.math.abs(tx - camX) < 0.02f) camX = tx
+        if (kotlin.math.abs(ty - camY) < 0.02f) camY = ty
     }
 
     // ---------------------------------------------------------------- draw
@@ -485,8 +504,11 @@ class GameView(
         drawWorld(ix, iy)
         drawUi()
 
+        // Shift by the camera's sub-pixel remainder in whole screen pixels.
+        val sx = (offX - fx * scale).roundToInt().toFloat()
+        val sy = (offY - fy * scale).roundToInt().toFloat()
         src.set(0, 0, wb.width, wb.height)
-        dst.set(offX - fx * scale, offY - fy * scale, offX - fx * scale + wb.width * scale, offY - fy * scale + wb.height * scale)
+        dst.set(sx, sy, sx + wb.width * scale, sy + wb.height * scale)
         canvas.drawColor(Palette.DEEP)
         canvas.drawBitmap(wb, src, dst, blit)
         src.set(0, 0, ub.width, ub.height)

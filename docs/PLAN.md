@@ -1,6 +1,13 @@
 # Golf Alone: game plan
 
 > **Status:** M0 and M1 done: the scaffold and one playable hole (Driftwood Cove 1). Next up is M2.
+> Where the build differs from this plan so far:
+> - A4: the aim preview's length follows power. It isn't a forecast of 40% of the roll.
+> - A7: touches that start in the system gesture zones are ignored. No exclusion rects are used,
+>   because nothing needs them.
+> - B1: there's no render interpolation. At 240 Hz with whole-pixel art it can't be seen.
+> - A2: the softest shot still launches at 22 px/s, so a drag just past the cancel ring always moves
+>   the ball a few pixels and never wastes a stroke.
 > The IDs (A1, C3, …) are there so you can say "drop C4, move E2 into v1".
 
 A top-down, 2D pixel-art golf game for Android (built and tested for a Pixel), installed as

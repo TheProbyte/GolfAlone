@@ -215,7 +215,11 @@ class Physics(val hole: Hole) {
         const val WALL_GRIP = 0.94f
         const val MAX_ROLL_S = 18f
 
+        /** The softest tap still rolls the ball a few pixels. */
+        const val MIN_SPEED = 22f
+
         /** Power 0..1 to launch speed; eased so short putts get fine control. */
-        fun launchSpeed(power: Float): Float = MAX_SPEED * power.coerceIn(0f, 1f).pow(1.45f)
+        fun launchSpeed(power: Float): Float =
+            MIN_SPEED + (MAX_SPEED - MIN_SPEED) * power.coerceIn(0f, 1f).pow(1.45f)
     }
 }

@@ -77,6 +77,22 @@ class PhysicsTest {
         assertTrue(dist in 200f..360f)
     }
 
+    @Test fun softestShotStillRolls() {
+        for (start in listOf(Holes.COVE_1.teeX to Holes.COVE_1.teeY)) {
+            val p = Physics(Holes.COVE_1)
+            p.placeAt(start.first, start.second)
+            p.shoot(0f, -1f, 0.02f)
+            p.settle()
+            val moved = start.second - p.y
+            println("softest shot on fairway: $moved px")
+            assertTrue("moved $moved px", moved >= 3f)
+        }
+        val g = Physics(room)
+        g.shoot(0f, -1f, 0f + 0.02f)
+        g.settle()
+        assertTrue(room.teeY - g.y < 12f) // still a gentle tap-in
+    }
+
     @Test fun plannerSolvesTheTestRoom() {
         assertNotNull(ShotPlanner(room).solve(2))
     }
