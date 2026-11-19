@@ -19,6 +19,18 @@
 >   - Not done: the splash sprite and the landing dust, which come with the airborne ball.
 > - **QoL:** quitting mid-roll plays the shot out (Q1), tapping fast-forwards a roll (Q2), and
 >   holes turn round faster (Q4: 0.2 s fades, a 0.6 s sink, and the card ready at 0.25 s).
+> - **F1 and F2 are built:**
+>   - **The airborne ball:** in the air only gravity applies. Walls (7 px), logs (5 px) and
+>     boulders (6 px) pass beneath it; palm trunks (14 px) don't. It lands with a bounce, plugs in
+>     sand, and a ball coming down on top of a solid hops off. The drop point only counts ground.
+>   - **Ramps:** steep uphill tiles (`N E S W`). Crest one and you're thrown about 10–19 px high
+>     and a few tiles long; too slow and you roll back. First Light has one at the pond as a
+>     second-shot shortcut (the rocks hide it from the tee), and the planner proves par without it.
+>   - **Tests:** 36 golden ground shots are unchanged; random shots on every hole always end
+>     grounded, outside solids and out of deep water; jumps clear water and low walls; and a ball
+>     never rests on a ramp.
+> - **The loft shot (F3) is on hold.** As planned, any pull past a ring lofts, which changes how
+>   every hole plays. It waits on how you'd like to choose a loft.
 >
 > Strike or reorder anything by ID. The order of work lives in one
 > place now: the **Roadmap** at the top of [PLAN.md](PLAN.md).

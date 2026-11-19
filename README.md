@@ -18,6 +18,10 @@ to shoot, and play a quiet island course alone.
   - **The Saddle:** a ridge green with slopes falling away.
 - **Play modes:** play the full course, with a running score against par and a scorecard at the
   end, or practise any hole you've unlocked.
+- **Forgiving water:** splashes follow the drawn coastline, and only once the whole ball is in.
+  A slow ball teeters on the edge, and a splash drops you ashore near where you went in.
+- **Ramps and flight:** roll up a wooden ramp fast to jump water and low walls. The ball's shadow
+  stays on the ground while it flies.
 - **Thumb-first menus:** every menu is a sheet of scorecard paper rising from the bottom, with
   the main driftwood button lowest and biggest.
   - Hole select is a swipe carousel.

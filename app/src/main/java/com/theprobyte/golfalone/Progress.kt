@@ -59,6 +59,11 @@ class Progress(context: Context) {
         get() = prefs.getBoolean("reduce_motion", false)
         set(v) = prefs.edit().putBoolean("reduce_motion", v).apply()
 
+    /** The one-time ramp tip has done its job once a ball has flown off a ramp. */
+    var seenRampTip: Boolean
+        get() = prefs.getBoolean("seen_ramp_tip", false)
+        set(v) = prefs.edit().putBoolean("seen_ramp_tip", v).apply()
+
     var debugOverlay: Boolean
         get() = prefs.getBoolean("debug_overlay", false)
         set(v) = prefs.edit().putBoolean("debug_overlay", v).apply()

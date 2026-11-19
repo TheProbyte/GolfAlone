@@ -415,18 +415,11 @@ class GameView(
     private fun saveHoleInProgress() {
         if (!courseRun || mode != Mode.PLAY || sinkT >= 0f) return
         if (physics.moving) {
-            // Play the shot out first, so the ball is saved where it really stops.
-            var sunk = false
-            physics.settle(object : PhysicsEvents {
-                override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { strokes++ }
-                override fun onCup(x: Float, y: Float, speed: Float) { sunk = true }
-            })
-            if (sunk) {
-                scores[holeIndex] = strokes
-                progress.record(holeIndex, strokes)
-                if (holeIndex + 1 < n) progress.saveRun(holeIndex + 1, scores) else progress.clearRun()
-                return
-            }
+            // Play the shot out first, so the ball is saved where it really stops. It runs
+            // through the normal events: a splash costs its stroke, and a holed ball goes down
+            // the usual cup path (score, saved round, and the card when the game comes back).
+            physics.settle(this)
+            if (physics.inCup) return
         }
         progress.saveRun(holeIndex, scores, strokes, physics.restX, physics.restY)
     }
@@ -584,7 +577,15 @@ class GameView(
             B_PAUSE -> openSheet(Sheet.PAUSE)
             B_RESUME -> closeSheet()
             B_RESTART -> { val i = holeIndex; fadeTo { loadHole(i); setMode(Mode.PLAY) } }
-            B_QUIT -> { saveHoleInProgress(); toTitle() }
+            B_QUIT -> {
+                saveHoleInProgress()
+                // Holed out on the last hole while quitting: the round is complete, so keep its best.
+                if (courseRun && physics.inCup && holeIndex == n - 1) {
+                    progress.recordCourse(course.name, scores.sum())
+                    progress.clearRun()
+                }
+                toTitle()
+            }
             B_NEXT -> nextHole()
             B_RETRY -> practise(holeIndex)
             B_SELECT -> toSelect()
@@ -664,6 +665,27 @@ class GameView(
             val s = 15f + rnd.nextFloat() * 35f
             spawn(x, y, cos(a) * s, sin(a) * s, 0.4f + rnd.nextFloat() * 0.3f, if (it % 2 == 0) Palette.SAND_LIGHT else Palette.SAND_DARK)
         }
+    }
+
+    override fun onLaunch(x: Float, y: Float, speed: Float) {
+        progress.seenRampTip = true
+        sfx.launch(speed, pan(x))
+        haptics.tap(this)
+        repeat(6) {
+            spawn(x, y, rnd.nextFloat() * 30f - 15f, rnd.nextFloat() * 20f, 0.35f, Palette.WOODS[3])
+        }
+    }
+
+    override fun onLand(x: Float, y: Float, impact: Float) {
+        sfx.land(impact, pan(x), hole.at(x, y) == Tile.SAND)
+        haptics.wall(this, impact)
+        val col = when (hole.at(x, y)) { Tile.SAND -> Palette.SAND_LIGHT; else -> Palette.ROUGH_LIGHT }
+        repeat((impact / 25f).toInt().coerceIn(2, 8)) {
+            val a = rnd.nextFloat() * 2f * PI.toFloat()
+            val s = 10f + rnd.nextFloat() * 25f
+            spawn(x, y, cos(a) * s, sin(a) * s * 0.5f, 0.35f, col)
+        }
+        ring(x, y, 0.3f, 4f, Palette.alpha(Palette.INK, 160))
     }
 
     override fun onTeeter(x: Float, y: Float) {
@@ -787,7 +809,7 @@ class GameView(
                 if (!physics.moving) { acc = 0f; break }
             }
             if (physics.moving && physics.speed > 90f && time - tLast > 1f / 50f) {
-                tX[tNext] = physics.x; tY[tNext] = physics.y; tAt[tNext] = time
+                tX[tNext] = physics.x; tY[tNext] = physics.y - physics.z; tAt[tNext] = time
                 tNext = (tNext + 1) % tn; tLast = time
             }
         } else acc = 0f
@@ -984,7 +1006,7 @@ class GameView(
             if (sinkT < 0f && Sprites.underCanopy(physics.x, physics.y, posts[k], posts[k + 1])) under = true
             k += 2
         }
-        if (under) Sprites.ball(c, physics.x.roundToInt() - ix, physics.y.roundToInt() - iy, 0, ghost = true)
+        if (under) Sprites.ball(c, physics.x.roundToInt() - ix, physics.y.roundToInt() - iy, 0, ghost = true, lift = physics.z.roundToInt())
 
         val near = hypot(physics.x - hole.cupX, physics.y - hole.cupY) < 24f && physics.moving
         val lift = if (sinkT >= 0f) min(3, (sinkT * 20f).toInt()) else 0
@@ -1037,7 +1059,7 @@ class GameView(
         val x = bx.roundToInt() - ix + wobble
         val y = by.roundToInt() - iy
         val dir = if (physics.vx + physics.vy >= 0f) 1 else -1
-        Sprites.ball(c, x, y, ((rollDist / 2.5f).toInt() * dir) and 3)
+        Sprites.ball(c, x, y, ((rollDist / 2.5f).toInt() * dir) and 3, lift = physics.z.roundToInt())
         // An idle ball breathes a faint ring so it's easy to find.
         if (mode == Mode.PLAY && !physics.moving && !aiming && sheet == Sheet.NONE && !flyover) {
             val ph = (time * 0.8f) % 1f
@@ -1252,6 +1274,8 @@ class GameView(
                 val text = if (aiming) (if (power > 0f) "LET GO TO SHOOT" else "PULL BACK TO AIM") else "PULL BACK ANYWHERE TO AIM"
                 PixelFont.drawCentered(c, text, lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
             }
+            hole.hasRamps && !progress.seenRampTip && strokes == 0 && !aiming && holeT > 2.6f ->
+                PixelFont.drawCentered(c, "ROLL UP A RAMP FAST TO JUMP", lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
             isLong() && strokes == 0 && !aiming && !physics.moving && holeT > 2.6f ->
                 PixelFont.drawCentered(c, "HOLD STILL TO PEEK", lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
         }
@@ -1547,6 +1571,7 @@ class GameView(
     internal val ballX get() = physics.x
     internal val ballY get() = physics.y
     internal val ballMoving get() = physics.moving
+    internal val ballAirborne get() = physics.airborne
     internal val ballInCup get() = physics.inCup
     internal val strokesForTest get() = strokes
     internal val scoresForTest get() = scores.copyOf()

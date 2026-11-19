@@ -55,6 +55,20 @@ class Sfx(context: Context) {
         }
     }
 
+    /** Off a ramp: a rising whoosh. */
+    fun launch(speed: Float, pan: Float) = play {
+        val v = (speed / 300f).coerceIn(0.2f, 1f)
+        it.tok(300f, 0.35f * v, pan)
+        it.sweep(0.25f + 0.25f * v, pan, 320f, 500f, 2400f)
+    }
+
+    /** Coming down: a soft thump, duller in sand. */
+    fun land(impact: Float, pan: Float, sand: Boolean) = play {
+        val v = (impact / 250f).coerceIn(0.1f, 1f)
+        if (sand) it.sweep(0.3f * v, pan, 200f, 1200f, 400f, q = 0.9f)
+        else it.tok(140f + impact * 0.2f, 0.6f * v, pan)
+    }
+
     /** The ball dropping back on the tee after a splash. */
     fun pop(pan: Float) = play { it.tok(520f, 0.25f, pan) }
 

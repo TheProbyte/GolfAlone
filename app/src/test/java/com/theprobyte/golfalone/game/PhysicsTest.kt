@@ -8,6 +8,7 @@ import org.junit.Test
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.floor
 
 class PhysicsTest {
 
@@ -237,6 +238,111 @@ class PhysicsTest {
                 if (p.x + p.y > 9.5f * 8f + 8f && p.x > 6.5f * 8f) crossed = true
             }
             assertFalse("crossed at angle $a", crossed)
+        }
+    }
+
+    /** A ramp facing north at the foot of a pond: a strong roll jumps it, a weak one rolls back. */
+    private val rampPond = box(
+        "############",
+        "#,,,,,,,,,O#",
+        "#,,,,,,,,,,#",
+        "#~~~~~~~~~~#",
+        "#~~~~~~~~~~#",
+        "#~~~~~~~~~~#",
+        "#,,,,N,,,,,#",
+        "#,,,,,,,,,,#",
+        "#,,,,T,,,,,#",
+        "############",
+    )
+
+    @Test fun aStrongRollUpARampJumpsTheWater() {
+        val p = Physics(rampPond)
+        var launched = false
+        var landed = false
+        var splashed = false
+        var maxZ = 0f
+        p.shoot(0f, -1f, 0.6f)
+        while (p.moving && p.shotTime < 10f) {
+            p.step(object : PhysicsEvents {
+                override fun onLaunch(x: Float, y: Float, speed: Float) { launched = true }
+                override fun onLand(x: Float, y: Float, impact: Float) { landed = true }
+                override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { splashed = true }
+            })
+            maxZ = maxOf(maxZ, p.z)
+        }
+        println("ramp jump: max height $maxZ px, came to rest at ${p.x},${p.y}")
+        assertTrue(launched); assertTrue(landed); assertFalse("cleared the water", splashed)
+        assertTrue("landed beyond the water", p.y < 3 * 8f)
+        assertFalse(p.airborne)
+        assertFalse("not resting inside the wall", p.y < 8f + Physics.BALL_R - 0.5f)
+    }
+
+    @Test fun aBallNeverRestsPartWayUpARamp() {
+        for (i in 1..40) {
+            val p = Physics(rampPond)
+            p.shoot(0f, -1f, i / 100f)
+            p.settle()
+            assertFalse("power ${i / 100f} stopped on the ramp at ${p.x},${p.y}", p.hole.at(p.x, p.y).isRamp)
+        }
+    }
+
+    @Test fun aWeakRollUpARampRollsBack() {
+        val p = Physics(rampPond)
+        var launched = false
+        p.shoot(0f, -1f, 0.2f)
+        p.settle(object : PhysicsEvents { override fun onLaunch(x: Float, y: Float, speed: Float) { launched = true } })
+        assertFalse(launched)
+        assertTrue("back below the ramp", p.y > 6 * 8f)
+    }
+
+    @Test fun aFlyingBallClearsLowWallsButNotPalms() {
+        val wallHole = box(
+            "~~~~~~~~~~~~~~~~",
+            "~,,,,,,,,,,,,,,~",
+            "~,,,,,,,,,,,,,,~",
+            "~,,,,,,,,,,,,,,~",
+            "~,,,,,,,,,,,,,,~",
+            "~,,,,,,,,,,,,,,~",
+            "~,,,,,,,,,,,,,O~",
+            "~,,,,,,#,,,,,,,~",
+            "~,,,,,,,,,,,,,,~",
+            "~,,,,,,,,,,,,,,~",
+            "~,,,,,,N,,,,,,,~",
+            "~,,,,,,,,,,,,,,~",
+            "~,,,,,,T,,,,,,,~",
+            "~~~~~~~~~~~~~~~~",
+        )
+        val p = Physics(wallHole)
+        var hitWall = false
+        p.shoot(0f, -1f, 0.6f)
+        p.settle(object : PhysicsEvents { override fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) { hitWall = true } })
+        assertFalse("flew over the boulder", hitWall)
+        assertTrue("past it: rest at ${p.x},${p.y}", p.y < 8.5f * 8f - Rails.BOULDER_R)
+    }
+
+    /** Random shots everywhere: the ball always ends grounded, outside every solid, out of deep water, in time. */
+    @Test fun invariantsHoldForRandomShots() {
+        val rnd = java.util.Random(42)
+        for (hole in Holes.all + rampPond) {
+            val p = Physics(hole)
+            repeat(120) {
+                p.placeAt(hole.teeX, hole.teeY)
+                p.shootAngle((rnd.nextFloat() * 2 * PI).toFloat(), 0.05f + rnd.nextFloat() * 0.95f)
+                val steps = p.settle()
+                val tag = "${hole.name}: rest at ${p.x},${p.y}"
+                assertFalse("$tag still moving", p.moving)
+                assertFalse("$tag still flying", p.airborne)
+                assertTrue("$tag took too long", steps < (Physics.MAX_ROLL_S * Physics.HZ).toInt() + 20)
+                if (!p.inCup) {
+                    assertTrue("$tag in deep water", hole.coast.waterDepth(p.x, p.y) < Physics.BALL_R)
+                    val t = hole.at(p.x, p.y)
+                    assertFalse("$tag inside a wall", t == Tile.WALL && !hole.rails.isBoulder(floor(p.x / 8).toInt(), floor(p.y / 8).toInt()) &&
+                        p.x % 8f in 1f..7f && p.y % 8f in 1f..7f)
+                    for (i in 0 until hole.rails.count) {
+                        assertTrue("$tag inside rail $i", hole.rails.distance(i, p.x, p.y) > hole.rails.r[i] + Physics.BALL_R - 0.6f)
+                    }
+                }
+            }
         }
     }
 

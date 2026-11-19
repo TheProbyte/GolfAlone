@@ -51,10 +51,11 @@ object Sprites {
         mapOf('o' to Palette.alpha(Palette.BALL, 170)))
 
     /** The ball centred on ([x], [y]); [spin] picks the roll frame, [ghost] draws a faint ring (under a palm). */
-    fun ball(c: Canvas, x: Int, y: Int, spin: Int, ghost: Boolean = false) {
-        if (ghost) { ballGhost.draw(c, x - 3, y - 3); return }
-        ballShadow.draw(c, x - 2, y - 2)
-        ballFrames[spin and 3].draw(c, x - 3, y - 3)
+    fun ball(c: Canvas, x: Int, y: Int, spin: Int, ghost: Boolean = false, lift: Int = 0) {
+        if (ghost) { ballGhost.draw(c, x - 3, y - 3 - lift); return }
+        // In the air the shadow stays on the ground, offset a little further as the ball climbs.
+        ballShadow.draw(c, x - 2 + lift / 6, y - 2 + lift / 8)
+        ballFrames[spin and 3].draw(c, x - 3, y - 3 - lift)
     }
 
     private val flagColours = mapOf('r' to Palette.FLAG, 'd' to Palette.FLAG_DARK, 'o' to Palette.alpha(Palette.CUP, 200))

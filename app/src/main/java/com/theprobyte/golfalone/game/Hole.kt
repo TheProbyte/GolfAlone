@@ -18,6 +18,9 @@ enum class Tile(
     val slopeY: Float = 0f,
     /** Bounciness when [solid]. */
     val e: Float = 0.62f,
+    /** Launch direction of a ramp (it rises that way), or 0. */
+    val rampX: Float = 0f,
+    val rampY: Float = 0f,
 ) {
     WATER(water = true),
     WALL(solid = true),
@@ -29,9 +32,14 @@ enum class Tile(
     SLOPE_N(c = 28f, k = 0.9f, slopeY = -1f),
     SLOPE_S(c = 28f, k = 0.9f, slopeY = 1f),
     SLOPE_E(c = 28f, k = 0.9f, slopeX = 1f),
-    SLOPE_W(c = 28f, k = 0.9f, slopeX = -1f);
+    SLOPE_W(c = 28f, k = 0.9f, slopeX = -1f),
+    RAMP_N(c = 40f, k = 1.2f, rampY = -1f),
+    RAMP_S(c = 40f, k = 1.2f, rampY = 1f),
+    RAMP_E(c = 40f, k = 1.2f, rampX = 1f),
+    RAMP_W(c = 40f, k = 1.2f, rampX = -1f);
 
     val isGreen get() = this == GREEN || slopeX != 0f || slopeY != 0f
+    val isRamp get() = rampX != 0f || rampY != 0f
     val isLand get() = !water
 }
 
@@ -39,9 +47,10 @@ enum class Tile(
  * A hole parsed from an ASCII map:
  * `~` water, `#` stone, `.` fairway, `,` rough, `:` green, `s` sand,
  * `^ v < >` green sloping downhill that way, `T` tee (fairway), `O` cup (green),
- * `w` driftwood (bouncy), `P` a palm (a round trunk standing in the rough).
+ * `w` driftwood (bouncy), `P` a palm (a round trunk standing in the rough),
+ * `N E S W` a wooden ramp that rises (and launches the ball) in that direction.
  */
-class Hole(val name: String, val par: Int, rows: List<String>) {
+class Hole(val name: String, val par: Int, val rows: List<String>) {
     val w: Int = rows.first().length
     val h: Int = rows.size
     val tiles: Array<Tile>
@@ -83,6 +92,10 @@ class Hole(val name: String, val par: Int, rows: List<String>) {
                 'v' -> Tile.SLOPE_S
                 '>' -> Tile.SLOPE_E
                 '<' -> Tile.SLOPE_W
+                'N' -> Tile.RAMP_N
+                'S' -> Tile.RAMP_S
+                'E' -> Tile.RAMP_E
+                'W' -> Tile.RAMP_W
                 'T' -> { tee = x to y; Tile.FAIRWAY }
                 'O' -> { cup = x to y; Tile.GREEN }
                 else -> error("$name: unknown tile '$ch' at $x,$y")
@@ -100,6 +113,11 @@ class Hole(val name: String, val par: Int, rows: List<String>) {
     companion object {
         const val POST_R = 2.5f
     }
+
+    /** The same hole with its ramps paved over (to prove par doesn't depend on them). */
+    fun withoutRamps(): Hole = Hole(name, par, rows.map { r -> r.map { if (it in "NESW") '.' else it }.joinToString("") })
+
+    val hasRamps: Boolean get() = tiles.any { it.isRamp }
 
     /** Off the map is open sea. */
     fun tile(tx: Int, ty: Int): Tile =

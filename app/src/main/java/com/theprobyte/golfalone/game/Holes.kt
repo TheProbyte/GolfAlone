@@ -8,7 +8,7 @@ class Course(val name: String, val holes: List<Hole>) {
 /** The hand-made holes. Each one is checked by `HoleCompletableTest`. */
 object Holes {
 
-    /** Round the rocks and the tide pool, up to a walled green. */
+    /** Round the rocks and the tide pool, up to a walled green, or jump the pool off the ramp. */
     val COVE_1 = Hole(
         name = "FIRST LIGHT",
         par = 3,
@@ -37,7 +37,7 @@ object Holes {
             "~~,,~~~~~~~.....,~~~",
             "~~,,,~~~~~......,~~~",
             "~~~,,,~~~......,,~~~",
-            "~~~~,,,.......,,~~~~",
+            "~~~~,,,N......,,~~~~",
             "~~~~~,,.......,~~~~~",
             "~~~~~,,.......,~~~~~",
             "~~~~,,,..##...,,~~~~",

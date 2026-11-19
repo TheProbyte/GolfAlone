@@ -16,6 +16,8 @@ class HoleCompletableTest {
             println("${hole.name}: par ${hole.par}, planner best ${best?.shots?.size ?: "none"} " +
                 "(${System.currentTimeMillis() - start} ms) ${best?.shots}")
             assertNotNull("${hole.name} can't be finished in par", best)
+            // Ramps are shortcuts: the hole must still make par without them.
+            if (hole.hasRamps) assertNotNull("${hole.name} needs its ramp for par", ShotPlanner(hole.withoutRamps()).solve(hole.par))
             // A perfect bot shouldn't ace a par 4.
             if (hole.par >= 4) assertTrue("${hole.name} is too easy", best!!.shots.size >= 2)
         }

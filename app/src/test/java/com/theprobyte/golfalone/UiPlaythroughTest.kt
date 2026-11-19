@@ -154,6 +154,80 @@ class UiPlaythroughTest {
         run(300)
     }
 
+    @Test fun aRampJumpOnFirstLight() {
+        val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
+        game = ctl.get().game
+        run(600)
+        press(GameView.B_PLAY)
+        runUntil(3000) { !game.busy }
+        // The rocks hide the ramp from the tee, so it's a second-shot shortcut: first lay up
+        // below it, then jump the pool. Both shots are found with the real physics, then played
+        // with real drags.
+        val hole = game.hole
+        fun sim(fx: Float, fy: Float, a: Float, pw: Float): Triple<Boolean, Float, Float> {
+            val p = com.theprobyte.golfalone.game.Physics(hole)
+            p.placeAt(fx, fy)
+            var launched = false
+            p.shootAngle(a, pw)
+            p.settle(object : com.theprobyte.golfalone.game.PhysicsEvents {
+                override fun onLaunch(x: Float, y: Float, speed: Float) { launched = true }
+            })
+            return Triple(launched && !p.inCup && hole.coast.isLand(p.x, p.y) && p.y < 16 * 8f, p.x, p.y)
+        }
+        var layUp: Pair<Float, Float>? = null
+        var jump: Pair<Float, Float>? = null
+        search@ for (a in 0 until 360 step 2) for (pw in 6..14) {
+            val ang = (a * Math.PI / 180).toFloat()
+            val (_, ex, ey) = sim(hole.teeX, hole.teeY, ang, pw / 20f)
+            if (kotlin.math.abs(ex - 60f) > 6f || ey !in 206f..236f) continue
+            for (b in -25..25) for (qw in 8..16) {
+                val ang2 = ((-90 + b) * Math.PI / 180).toFloat()
+                if (sim(ex, ey, ang2, qw / 20f).first) { layUp = ang to pw / 20f; jump = ang2 to qw / 20f; break@search }
+            }
+        }
+        assertNotNull("a lay-up below the ramp, then a jump over the pool", jump)
+        drag(layUp!!.first, layUp.second)
+        waitForRest()
+        frame("ramp-0-below")
+        val best = jump
+        drag(best!!.first, best.second)
+        var flew = false
+        var t = 0
+        while (game.ballMoving && t++ < 400) {
+            run(16)
+            if (game.ballAirborne && !flew) { flew = true; run(80); frame("ramp-1-flight"); run(80); frame("ramp-2-flight") }
+        }
+        assertTrue("it flew", flew)
+        run(200)
+        frame("ramp-3-landed")
+    }
+
+    @Test fun backgroundingWhileAHolingShotRollsStillShowsTheCard() {
+        val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
+        game = ctl.get().game
+        run(600)
+        press(GameView.B_PLAY)
+        runUntil(3000) { !game.busy }
+        val planner = ShotPlanner(game.hole)
+        var guard = 0
+        while (!game.ballInCup && guard++ < 10) {
+            val plan = (1..4).firstNotNullOfOrNull { planner.solveFrom(game.ballX, game.ballY, it) }!!
+            val s = plan.shots.first()
+            drag(s.angle, s.power)
+            if (plan.shots.size == 1) {
+                run(64)
+                assertTrue("still rolling", game.ballMoving)
+                ctl.pause() // the app goes to the background mid-roll
+                ctl.resume()
+                break
+            }
+            waitForRest()
+        }
+        assertTrue("holed", game.ballInCup)
+        run(1500)
+        assertEquals("the card appears", GameView.Mode.CARD, game.mode)
+    }
+
     @Test fun playTheCourse() {
         val act = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         game = act.game

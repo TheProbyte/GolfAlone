@@ -22,7 +22,7 @@
    plus the draw-time readout (Q6). Nothing else is converted until you've seen it on the phone.
 2. ✅ **The rest of the art pass**, plus your feedback: calmer deep water, and walls and logs that join diagonally: ponds, banks, boulders, decoration, driftwood and effects (A3, A4, A6–A9).
 3. 🔶 **QoL batch** (Q1, Q2 and Q4 done; Q3 sliders and Q5 tips left): what you found annoying, then Q1–Q5.
-4. **Airborne ball (F1), then ramps (F2) and the loft shot (F3)**, if decision D3 keeps them before the tide.
+4. 🔶 **Airborne ball (F1) and ramps (F2) are done.** The loft shot (F3) waits on one question: how should you choose a loft?
 5. **M3: Saltmarsh and the tide.**
 6. **M4: Lighthouse Point** (wind, crabs, night), with time-of-day palettes (A10).
 7. **Later:** the connected island (D3), endless and daily holes, the ghost of your best round.

@@ -148,6 +148,7 @@ class Terrain(private val hole: Hole) {
                 rail[i] == Rails.WOOD.toInt() -> K_WOOD
                 rail[i] == Rails.BOULDER.toInt() -> K_ROCK
                 rounded[i] -> K_WALL
+                hole.tile(x / TILE, y / TILE).isRamp -> K_RAMP
                 sand[i] > 0.5f -> K_SAND
                 green[i] > 0.5f -> K_GREEN
                 fair[i] > 0.5f -> K_FAIR
@@ -264,6 +265,7 @@ class Terrain(private val hole: Hole) {
         if (kd == K_WALL) return stone(x, y)
         if (kd == K_WOOD) return wood(x, y)
         if (kd == K_ROCK) return rock(x, y)
+        if (kd == K_RAMP) return ramp(x, y)
 
         // Beaches where land meets the sea.
         if (d < 3.4f + hash(x / 3, y / 3, 3)) return if (d < 1.5f) Palette.SAND_LIGHT else Palette.SAND
@@ -507,6 +509,26 @@ class Terrain(private val hole: Hole) {
         }
     }
 
+    /**
+     * A wooden ramp in 3/4 view: planks across the climb, lighter towards the high lip, dark
+     * side rails, and a chevron pointing the way it launches.
+     */
+    private fun ramp(x: Int, y: Int): Int {
+        val t = tileAt(x, y)
+        val u = x % TILE
+        val v = y % TILE
+        val a = when { t.rampY < 0 -> 7 - v; t.rampY > 0 -> v; t.rampX > 0 -> u; else -> 7 - u } // up the ramp
+        val b = if (t.rampY != 0f) u else v // across
+        val chevron = a in 2..5 && kotlin.math.abs(b * 2 - 7) == (5 - a) * 2 - 1
+        return when {
+            b == 0 || b == 7 -> Palette.WOODS[1]
+            a == 7 -> Palette.WOODS[4]
+            chevron -> Palette.WOODS[4]
+            a % 2 == 1 -> Palette.WOODS[1 + (a + 1) / 3]
+            else -> Palette.WOODS[2 + a / 4]
+        }
+    }
+
     /** A boulder: a round stone lit from the top left, outlined on its shaded side. */
     private fun rock(x: Int, y: Int): Int {
         val cx = (x / TILE + 0.5f) * TILE
@@ -660,6 +682,7 @@ class Terrain(private val hole: Hole) {
         private const val K_WALL: Byte = 5
         private const val K_WOOD: Byte = 6
         private const val K_ROCK: Byte = 7
+        private const val K_RAMP: Byte = 8
 
         private val BAYER = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
         fun bayer(x: Int, y: Int): Int = BAYER[(y and 3) * 4 + (x and 3)]
