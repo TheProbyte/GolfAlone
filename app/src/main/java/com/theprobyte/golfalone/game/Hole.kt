@@ -254,6 +254,9 @@ class Hole(
 
     val hasRamps: Boolean get() = tiles.any { it.isRamp }
 
+    /** Tiles with a current on them (for drawing their drift). */
+    val currentTiles: IntArray by lazy { tiles.indices.filter { tiles[it].flows }.toIntArray() }
+
     /** Off the map is open sea. */
     fun tile(tx: Int, ty: Int): Tile =
         if (tx < 0 || ty < 0 || tx >= w || ty >= h) Tile.WATER else tiles[ty * w + tx]

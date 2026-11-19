@@ -288,7 +288,7 @@ object Holes {
     val COVE = Course("cove", "DRIFTWOOD COVE", mood = com.theprobyte.golfalone.render.Mood.DAWN, holes = listOf(COVE_1, COVE_2, COVE_3, COVE_4, COVE_5, COVE_6))
 
     /** Every course, in the order they open: finish a round of one to open the next. */
-    val COURSES: List<Course> by lazy { listOf(COVE, Saltmarsh.COURSE, Lighthouse.COURSE) }
+    val COURSES: List<Course> by lazy { listOf(COVE, Saltmarsh.COURSE, Lighthouse.COURSE, Lagoon.COURSE) }
 
     fun course(id: String): Course? = COURSES.firstOrNull { it.id == id }
 

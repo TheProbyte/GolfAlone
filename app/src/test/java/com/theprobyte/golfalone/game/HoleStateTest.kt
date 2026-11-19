@@ -114,4 +114,58 @@ class HoleStateTest {
         assertFalse(ph.inCup)
         assertEquals(Tile.MUD, bog.at(ph.x, ph.y))
     }
+
+    private val rip = Hole("RIP", 3, listOf(
+        "~~~~~~~~~~~~",
+        "~~,,,,,,,,~~",
+        "~~,::O:::,~~",
+        "~~,......,~~",
+        "~~66666666666",
+        "~~66666666666",
+        "~~,......,~~",
+        "~~,...T..,~~",
+        "~~,,,,,,,,~~",
+        "~~~~~~~~~~~~",
+    ).map { it.padEnd(13, '~').take(13) })
+
+    @Test fun aRipCarriesASlowBallOutToSea() {
+        // A soft putt into the current: it drifts east and is carried off the edge (no teetering).
+        val ph = Physics(rip)
+        var splashed = false
+        ph.placeAt(4.5f * TILE, 6.5f * TILE)
+        ph.shootAngle((-Math.PI / 2).toFloat(), 0.08f)
+        ph.settle(object : PhysicsEvents { override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { splashed = true } })
+        assertTrue("carried into the sea", splashed)
+        assertFalse(ph.moving)
+    }
+
+    @Test fun aFirmShotCrossesTheRip() {
+        val ph = Physics(rip)
+        ph.placeAt(4.5f * TILE, 6.5f * TILE)
+        ph.shootAngle((-Math.PI / 2).toFloat(), 0.5f)
+        ph.settle()
+        assertTrue("across, north of the current", ph.y < 4 * TILE)
+    }
+
+    @Test fun shallowsAreSlowButSafe() {
+        val wade = Hole("WADE", 3, listOf(
+            "~~~~~~~~~",
+            "~,,,,,,,~",
+            "~,::O::,~",
+            "~-------~",
+            "~-------~",
+            "~-------~",
+            "~-------~",
+            "~,.....,~",
+            "~,..T..,~",
+            "~,,,,,,,~",
+            "~~~~~~~~~",
+        ))
+        val ph = Physics(wade)
+        var splashed = false
+        ph.shootAngle((-Math.PI / 2).toFloat(), 0.35f)
+        ph.settle(object : PhysicsEvents { override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { splashed = true } })
+        assertFalse("shallows are no hazard", splashed)
+        assertTrue("and they slow the ball", ph.y > 3 * TILE)
+    }
 }

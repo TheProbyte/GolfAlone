@@ -33,6 +33,25 @@ object Bodies {
         crabFromX: FloatArray, crabFromY: FloatArray, crabK: Float, showSteps: Boolean,
         bumpX: Float, bumpY: Float, bumpT: Float,
     ) {
+        // Currents: streaks of foam drifting the way the water runs.
+        for (i in hole.currentTiles) {
+            val t = hole.tiles[i]
+            val tx = i % hole.w
+            val ty = i / hole.w
+            for (s in 0 until 2) {
+                val h = Terrain.hash(tx * 2 + s, ty, 73)
+                val along = ((time * 14f + h * TILE * 3) % TILE).toInt()
+                val across = 1 + ((Terrain.hash(tx, ty * 2 + s, 74) * 6).toInt())
+                val ox = if (t.flowX != 0f) (if (t.flowX > 0) along else TILE - 1 - along) else across
+                val oy = if (t.flowY != 0f) (if (t.flowY > 0) along else TILE - 1 - along) else across
+                val x = tx * TILE + ox - ix
+                val y = ty * TILE + oy - iy
+                val col = Palette.alpha(Palette.SEA[5], 210)
+                px(c, x, y, col)
+                px(c, x - t.flowX.toInt(), y - t.flowY.toInt(), Palette.alpha(Palette.SEA[5], 120))
+            }
+        }
+
         // Cracked planks still standing: a board wall with a split down it.
         for (ty in 0 until hole.h) for (tx in 0 until hole.w) {
             val g = hole.plankAt(tx, ty)

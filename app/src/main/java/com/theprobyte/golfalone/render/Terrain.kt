@@ -407,12 +407,16 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         return if (x % 4 == 0) Palette.WOODS[1] else Palette.WOODS[2]
     }
 
-    /** Clear water over sand: sand showing through, a brighter rim at the drop-off. */
+    /** Clear turquoise water over sand: a bright rim at the drop-off, caustic lines, darker channels. */
     private fun shallow(x: Int, y: Int, d: Float): Int {
         if (d < 1.2f) return Palette.SEA[5]
         if (d < 2.4f && (x + y) % 2 == 0) return Palette.SEA[5]
-        val sandy = Palette.lerp(Palette.SANDS[3], Palette.SEA[4], 0.55f)
-        return if (hash(x / 4, y / 3, 64) < 0.18f) Palette.lerp(Palette.SANDS[4], Palette.SEA[4], 0.45f) else sandy
+        val t = tileAt(x, y)
+        val base = if (t.flows) Palette.lerp(Palette.SEA[3], Palette.SEA[4], 0.5f) else Palette.lerp(Palette.SEA[4], Palette.SANDS[3], 0.28f)
+        // Caustics: thin wavy light lines.
+        val wave = (x + (kotlin.math.sin(y * 0.5f + x * 0.13f) * 2.5f).toInt() + y / 3) % 9 == 0
+        if (wave && hash(x / 2, y / 2, 64) < 0.7f) return Palette.lerp(base, Palette.SEA[5], 0.6f)
+        return if (hash(x / 5, y / 4, 68) < 0.12f) Palette.lerp(base, Palette.SANDS[4], 0.25f) else base
     }
 
     /** Firm, wet tidal sand: darker and cooler than the beach, with long ripples and the odd puddle. */
