@@ -412,6 +412,9 @@ class Terrain(private val hole: Hole) {
         return out
     }
 
+    /** For art experiments in tests: the land mask, bank rows and edge distances. */
+    internal fun masks(): Triple<BooleanArray, ByteArray, FloatArray> = Triple(land, bank, edge)
+
     /** A small nearest-sampled copy of the ground for hole cards: every [step]th pixel. */
     fun thumbnail(step: Int): Bitmap {
         val tw = w / step

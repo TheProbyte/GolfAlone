@@ -1,8 +1,8 @@
 # Golf Alone: game plan
 
-> **Status:** M0, M1 and M2 are done: the full six-hole Driftwood Cove is built (see
-> [POLISH_AND_COURSE_PLAN.md](POLISH_AND_COURSE_PLAN.md)), and so is the style and UI pass in
-> [STYLE_AND_UI_PLAN.md](STYLE_AND_UI_PLAN.md). Next up is M3, the tide.
+> **Status:** M0, M1 and M2 are done: the full six-hole Driftwood Cove (see
+> [POLISH_AND_COURSE_PLAN.md](POLISH_AND_COURSE_PLAN.md)), plus the style and UI pass
+> ([STYLE_AND_UI_PLAN.md](STYLE_AND_UI_PLAN.md)).
 > Where the build differs from this plan so far:
 > - D3: the holes are **not** yet one continuous island. Each hole is its own map, with a
 >   dissolve transition between them (and a flyover on long holes). The connected island is
@@ -13,6 +13,22 @@
 > - B1: there's no render interpolation. At 240 Hz with whole-pixel art it can't be seen.
 > - A2: the softest shot still launches at 22 px/s, so a drag just past the cancel ring always moves
 >   the ball a few pixels and never wastes a stroke.
+
+## Roadmap (the single ordered list of what's next)
+
+1. **Art slice, then a phone check:** the chosen water and palm (A1, A2, A5) on holes 1 and 5,
+   plus the draw-time readout (Q6). Nothing else is converted until you've seen it on the phone.
+2. **The rest of the art pass:** ponds, banks, boulders, decoration, driftwood and effects (A3, A4, A6–A9).
+3. **QoL batch:** what you found annoying, then Q1–Q5.
+4. **Airborne ball (F1), then ramps (F2) and the loft shot (F3)**, if decision D3 keeps them before the tide.
+5. **M3: Saltmarsh and the tide.**
+6. **M4: Lighthouse Point** (wind, crabs, night), with time-of-day palettes (A10).
+7. **Later:** the connected island (D3), endless and daily holes, the ghost of your best round.
+
+Details: [ART_AND_FEATURES_PLAN.md](ART_AND_FEATURES_PLAN.md). Rows still open in the older plans
+(POLISH V8–V10, U9–U10; STYLE P10, U11, E1, E3) are folded into the items above.
+
+---
 
 A top-down, 2D pixel-art golf game for Android (built and tested for a Pixel), installed as
 a sideloaded APK. You play alone on a small tidal island at the edge of the sea. Pull back
