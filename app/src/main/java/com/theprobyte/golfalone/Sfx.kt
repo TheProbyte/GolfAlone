@@ -116,6 +116,27 @@ class Sfx(context: Context) {
         if (holeInOne || toPar < 0) it.glass(Synth.midiToHz(root + 31f), 0.4f, 0f, delayMs = 240f + notes.size * 105f)
     }
 
+    /** A course's own background sound now and then: frogs, crickets and a foghorn, lapping water, rain and thunder. */
+    fun ambience(theme: String, pan: Float, roll: Float) {
+        val v = surfVolume
+        if (v <= 0f) return
+        when (theme) {
+            "marsh" -> play {
+                val f = 90f + roll * 40f
+                it.tok(f, 0.22f * v, pan); it.tok(f * 1.1f, 0.18f * v, pan, delayMs = 110f)
+            }
+            "light" -> play {
+                if (roll < 0.15f) it.sweep(0.16f * v, pan, 1800f, 120f, 110f, q = 2f) // the foghorn, far off
+                else for (k in 0 until 3) it.glass(Synth.midiToHz(98f + roll * 4f), 0.06f * v, pan, delayMs = k * 70f)
+            }
+            "lagoon" -> play { it.sweep(0.12f * v, pan, 900f, 400f, 700f, q = 0.6f) }
+            "wreck" -> play {
+                it.sweep(0.16f * v, pan, 2400f, 3000f, 2000f, q = 0.5f)
+                if (roll < 0.12f) it.sweep(0.3f * v, 0f, 2600f, 90f, 40f, q = 0.7f, delayMs = 300f) // thunder
+            }
+        }
+    }
+
     /** Distant surf for the island's ambience. */
     fun surf(pan: Float) {
         val v = surfVolume

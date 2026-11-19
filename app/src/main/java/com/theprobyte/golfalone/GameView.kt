@@ -357,7 +357,7 @@ class GameView(
         physics = Physics(hole, holeState)
         scratch = Physics(hole, HoleState(hole))
         terrain = terrains[i].get()
-        ambient.reset(terrain)
+        ambient.reset(terrain, course.id)
         crabFromX = FloatArray(hole.crabs.size) { holeState.crabX(it) }
         crabFromY = FloatArray(hole.crabs.size) { holeState.crabY(it) }
         crabMoveT = -1f
@@ -1165,7 +1165,8 @@ class GameView(
         }
         surfNext -= dt
         if (surfNext <= 0f) {
-            sfx.surf(rnd.nextFloat() * 1.6f - 0.8f)
+            if (course.id == "cove" || rnd.nextBoolean()) sfx.surf(rnd.nextFloat() * 1.6f - 0.8f)
+            else sfx.ambience(course.id, rnd.nextFloat() * 1.6f - 0.8f, rnd.nextFloat())
             surfNext = 5f + rnd.nextFloat() * 4f
         }
 

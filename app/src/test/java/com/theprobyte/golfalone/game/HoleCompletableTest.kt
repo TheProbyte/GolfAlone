@@ -28,4 +28,28 @@ class HoleCompletableTest {
             if (hole.par >= 4) assertTrue("${hole.name} is too easy", best!!.shots.size >= 2)
         }
     }
+
+    /**
+     * Barrels can't be undone, and a round has no restart, so no barrel may ever leave a hole
+     * unfinishable: from states reached by random shots, the bot must still find the cup.
+     */
+    @Test fun barrelsNeverLockAHole() {
+        val rnd = java.util.Random(11)
+        for (hole in Holes.everyHole.filter { it.barrels.isNotEmpty() }) {
+            repeat(6) { trial ->
+                val st = HoleState(hole)
+                val ph = Physics(hole, st)
+                repeat(1 + rnd.nextInt(3)) {
+                    if (!ph.inCup) {
+                        ph.shootAngle((rnd.nextDouble() * 2 * Math.PI).toFloat(), 0.2f + rnd.nextFloat() * 0.8f)
+                        ph.settle()
+                        ph.endShot()
+                    }
+                }
+                if (ph.inCup) return@repeat
+                val plan = (1..6).firstNotNullOfOrNull { ShotPlanner(hole, beam = 4).solveFrom(ph.x, ph.y, it, st) }
+                assertNotNull("${hole.name} trial $trial: stuck at ${ph.x},${ph.y} (barrels ${st.encode()})", plan)
+            }
+        }
+    }
 }

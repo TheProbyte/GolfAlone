@@ -174,6 +174,9 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     // Lanterns and the lighthouse (with its beam) stand over everything.
     Bodies.scenery(c, hole, ix, iy, steppedTime, reduceMotion)
 
+    // A storm's rain (screen space; none under reduce motion).
+    if (!reduceMotion) ambient.rain(c, lw + 1, lh + 1, time)
+
     // Cloud shadows drift over everything on the ground.
     for (i in clouds.indices) {
         val cw = clouds[i].width

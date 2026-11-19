@@ -235,6 +235,43 @@ class UiPlaythroughTest {
         assertEquals("the card appears", GameView.Mode.CARD, game.mode)
     }
 
+    /** Every new course, unlocked: play the hole that shows off its idea, with the bot. */
+    @Test fun theNewCourses() {
+        val prefs = org.robolectric.RuntimeEnvironment.getApplication().getSharedPreferences("golf", android.content.Context.MODE_PRIVATE)
+        val e = prefs.edit()
+        for (c in com.theprobyte.golfalone.game.Holes.COURSES) {
+            e.putInt("course_${c.id}", 30)
+            for (i in c.holes.indices) e.putInt("best_${c.id}_$i", 9)
+        }
+        e.putBoolean("save_v2", true).commit()
+        game = Robolectric.buildActivity(MainActivity::class.java).setup().get().game
+        game.dispatchApplyWindowInsets(pixelInsets())
+        game.onImmersive = { hide -> game.dispatchApplyWindowInsets(pixelInsets(if (hide) 0 else 63)) }
+        run(600)
+        val plays = mapOf("marsh" to listOf(0, 3), "light" to listOf(1, 3), "lagoon" to listOf(1, 3), "wreck" to listOf(1, 2))
+        for ((id, holes) in plays) {
+            while (game.courseForTest.id != id) { press(GameView.B_NEXT_COURSE); runUntil(3000) { !game.fading } }
+            run(400)
+            frame("c-$id-0-title")
+            for (h in holes) {
+                press(GameView.B_HOLES)
+                while (game.selectedHole < h) press(GameView.B_NEXT_HOLE)
+                press(GameView.B_PLAY_HOLE)
+                runUntil(4000) { !game.busy }
+                run(300)
+                frame("c-$id-${h + 1}-tee")
+                playHole("c-$id-${h + 1}")
+                assertTrue("${game.hole.name} holed", game.ballInCup)
+                println("${game.hole.name}: ${game.strokesForTest} (par ${game.hole.par})")
+                run(1500)
+                frame("c-$id-${h + 1}-card")
+                press(GameView.B_SELECT)
+                press(GameView.B_BACK)
+            }
+        }
+        assertTrue("labels that don't fit: ${game.textOverflows}", game.textOverflows.isEmpty())
+    }
+
     @Test fun playTheCourse() {
         val act = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         game = act.game

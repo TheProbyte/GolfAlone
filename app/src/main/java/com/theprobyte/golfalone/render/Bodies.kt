@@ -160,10 +160,10 @@ object Bodies {
         for (dy in -3..3) for (dx in -3..3) {
             val d2 = dx * dx + dy * dy
             if (d2 > 11) continue
-            var col = Palette.WOODS[2]
-            if (d2 in 5..7) col = Palette.WOODS[0] // the hoop
-            if (d2 >= 10) col = Palette.WOODS[1]
-            if (dx + dy <= -3 && d2 < 5) col = Palette.WOODS[3]
+            var col = Palette.WOODS[3]
+            if (d2 in 5..7) col = Palette.WOODS[1] // the hoop
+            if (d2 >= 10) col = Palette.WOODS[0]
+            if (dx + dy <= -3 && d2 < 5) col = Palette.WOODS[4]
             px(c, x + dx, y + dy, col)
         }
         // A stave line that turns while it rolls.

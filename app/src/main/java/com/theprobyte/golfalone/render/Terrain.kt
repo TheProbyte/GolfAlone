@@ -92,6 +92,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
     val flowerSpots = ArrayList<Int>()
     val pondSpots = ArrayList<Int>()
     val wallTopSpots = ArrayList<Int>()
+    val shallowSpots = ArrayList<Int>()
 
 
     init {
@@ -367,24 +368,24 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         return v && !hz || (v && hz && hole.h > hole.w)
     }
 
-    /** Weathered boards with dark seams, staggered ends and the odd nail. */
+    /** Weathered boards with soft seams, staggered ends and the odd nail. */
     private fun deck(x: Int, y: Int): Int {
         val tx = x / TILE
         val ty = y / TILE
         val vertical = deckRunsVertically(tx, ty)
-        val across = if (vertical) y else x // boards are 3 px wide, laid across the run
+        val across = if (vertical) y else x // boards are 4 px wide, laid across the run
         val along = if (vertical) x else y
-        val board = across / 3
-        val seam = across % 3 == 2
-        val end = (along + (hash(board, 0, 61) * 16).toInt()) % 16 == 0
+        val board = across / 4
+        val seam = across % 4 == 3
+        val end = (along + (hash(board, 0, 61) * 24).toInt()) % 24 == 0
         var c = when {
-            seam || end -> Palette.WOODS[1]
-            hash(board, along / 5, 62) < 0.25f -> Palette.WOODS[2]
+            end -> Palette.WOODS[1]
+            seam -> Palette.WOODS[2]
+            hash(board, along / 8, 62) < 0.2f -> Palette.lerp(Palette.WOODS[3], Palette.WOODS[2], 0.5f)
             else -> Palette.WOODS[3]
         }
-        if (!seam && !end && across % 3 == 0 && hash(x, y, 63) < 0.08f) c = Palette.WOODS[4]
-        if (!seam && (along % 16 == 2) && across % 3 == 1) c = Palette.WOODS[0] // nails
-        // The boardwalk's outer edge.
+        if (!seam && !end && across % 4 == 0 && hash(x, y, 63) < 0.1f) c = Palette.WOODS[4]
+        if (!seam && (along % 24 == 3) && across % 4 == 1) c = Palette.WOODS[1] // nails
         val edgeTile = if (vertical) (x % TILE == 0 && !isDeck(tx - 1, ty)) || (x % TILE == TILE - 1 && !isDeck(tx + 1, ty))
             else (y % TILE == 0 && !isDeck(tx, ty - 1)) || (y % TILE == TILE - 1 && !isDeck(tx, ty + 1))
         return if (edgeTile) Palette.WOODS[2] else c
@@ -392,7 +393,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
 
     private fun isDeck(tx: Int, ty: Int): Boolean { val t = hole.tile(tx, ty); return t == Tile.DECK || t == Tile.PLANK }
 
-    /** A wreck's dark timbers: a 3/4 wall with a lit top and planked front. */
+    /** A wreck's dark timbers: a 3/4 wall with a lit top edge, dark planked body and a shadowed face. */
     private fun hull(x: Int, y: Int): Int {
         val tx = x / TILE
         val ty = y / TILE
@@ -400,11 +401,14 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         val openBelow = hole.tile(tx, ty + 1) != Tile.HULL
         if (openBelow && v >= FACE_TOP) {
             if (v == TILE - 1) return Palette.WOODS[0]
-            return if ((x + (v - FACE_TOP) * 3) % 9 == 0) Palette.WOODS[0] else Palette.WOODS[1]
+            return if ((x + (v - FACE_TOP) * 3) % 7 == 0) Palette.WOODS[0] else Palette.lerp(Palette.WOODS[0], Palette.WOODS[1], 0.6f)
         }
         val openAbove = hole.tile(tx, ty - 1) != Tile.HULL
-        if (openAbove && v == 0) return Palette.WOODS[3]
-        return if (x % 4 == 0) Palette.WOODS[1] else Palette.WOODS[2]
+        if (openAbove && v == 0) return Palette.WOODS[4]
+        if (openAbove && v == 1) return Palette.WOODS[3]
+        val sideOpen = (x % TILE == 0 && hole.tile(tx - 1, ty) != Tile.HULL) || (x % TILE == TILE - 1 && hole.tile(tx + 1, ty) != Tile.HULL)
+        if (sideOpen) return Palette.WOODS[3]
+        return if (y % 3 == 0) Palette.WOODS[0] else Palette.WOODS[1]
     }
 
     /** Clear turquoise water over sand: a bright rim at the drop-off, caustic lines, darker channels. */
@@ -782,6 +786,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                 pond[i] && edge[i] >= 4f -> pondSpots += i
                 kind[i] == K_WALL && isStone(x, y + 4) && isStone(x, y - 1) -> wallTopSpots += i
                 kind[i] == K_ROUGH && edge[i] > 5f && hash(gx, gy, 93) < 0.25f -> flowerSpots += i
+                kind[i] == K_SHALLOW && edge[i] > 3f && !tileAt(x, y).flows -> shallowSpots += i
             }
         }
     }
