@@ -23,67 +23,85 @@ object Palette {
     val POND = intArrayOf(c(0xFF163B44), c(0xFF1D5260), c(0xFF276B74), c(0xFF3F8F86), c(0xFF9FD1BF))
     val NIGHT = intArrayOf(c(0xFF0E1522), c(0xFF121C2A), c(0xFF1B2A3A), c(0xFF24384D), c(0xFF4D6F8A))
     private val ramps = arrayOf(SEA, GRASS, SANDS, STONES, WOODS, PAPER, LEAF, DRIFT, POND, NIGHT)
+    /** The world's ramps (the UI's paper and night ramps are never graded). */
+    private val worldRamps = arrayOf(SEA, GRASS, SANDS, STONES, WOODS, LEAF, DRIFT, POND)
+    private val base = worldRamps.map { it.copyOf() }
+
+    /** The current time of day; set before anything is baked (see [setMood]). */
+    var mood = Mood.DAY
+        private set
+
+    /**
+     * Swaps the world's ramps to [m]. Anything baked from the palette (terrain, sprites, the
+     * sea tile) must be rebuilt afterwards; [Sprites] and [Terrain.sea] check [mood] themselves.
+     */
+    fun setMood(m: Mood) {
+        if (m == mood) return
+        for ((k, ramp) in worldRamps.withIndex()) for (i in ramp.indices) ramp[i] = m.grade(base[k][i])
+        mood = m
+        rebuildMaps()
+    }
 
     // ---------------------------------------------------------------- named colours
     // Open sea sits one step up the ramp, so the course reads as daytime.
-    val DEEP = SEA[1]
-    val MID = SEA[2]
-    val SHALLOW = SEA[3]
-    val SHOAL = SEA[4]
-    val RIPPLE = SEA[4]
-    val FOAM = SEA[5]
-    val SPARKLE = SEA[4]
+    val DEEP: Int get() = SEA[1]
+    val MID: Int get() = SEA[2]
+    val SHALLOW: Int get() = SEA[3]
+    val SHOAL: Int get() = SEA[4]
+    val RIPPLE: Int get() = SEA[4]
+    val FOAM: Int get() = SEA[5]
+    val SPARKLE: Int get() = SEA[4]
 
-    val SAND_DARK = SANDS[2]
-    val SAND = SANDS[3]
-    val SAND_LIGHT = SANDS[4]
-    val BANK = SANDS[2]
-    val BANK_DARK = SANDS[1]
-    val BANK_DARKER = SANDS[0]
+    val SAND_DARK: Int get() = SANDS[2]
+    val SAND: Int get() = SANDS[3]
+    val SAND_LIGHT: Int get() = SANDS[4]
+    val BANK: Int get() = SANDS[2]
+    val BANK_DARK: Int get() = SANDS[1]
+    val BANK_DARKER: Int get() = SANDS[0]
 
-    val FAIR_A = GRASS[5]
-    val FAIR_B = GRASS[4]
-    val FAIR_DOT = GRASS[3]
-    val ROUGH = GRASS[3]
-    val ROUGH_DARK = GRASS[2]
-    val ROUGH_LIGHT = GRASS[5]
-    val GREEN_A = GRASS[6]
-    val GREEN_B = GRASS[5]
-    val COLLAR = GRASS[4]
-    val SLOPE_DARK = GRASS[4]
+    val FAIR_A: Int get() = GRASS[5]
+    val FAIR_B: Int get() = GRASS[4]
+    val FAIR_DOT: Int get() = GRASS[3]
+    val ROUGH: Int get() = GRASS[3]
+    val ROUGH_DARK: Int get() = GRASS[2]
+    val ROUGH_LIGHT: Int get() = GRASS[5]
+    val GREEN_A: Int get() = GRASS[6]
+    val GREEN_B: Int get() = GRASS[5]
+    val COLLAR: Int get() = GRASS[4]
+    val SLOPE_DARK: Int get() = GRASS[4]
     val SLOPE_GLINT = c(0xFFE4F3A8)
-    val OUTLINE_GREEN = GRASS[0]
+    val OUTLINE_GREEN: Int get() = GRASS[0]
 
-    val STONE_DARKER = STONES[0]
-    val STONE_DARK = STONES[1]
-    val STONE = STONES[2]
-    val STONE_TOP = STONES[3]
-    val STONE_LIGHT = STONES[4]
+    val STONE_DARKER: Int get() = STONES[0]
+    val STONE_DARK: Int get() = STONES[1]
+    val STONE: Int get() = STONES[2]
+    val STONE_TOP: Int get() = STONES[3]
+    val STONE_LIGHT: Int get() = STONES[4]
 
-    val WOOD_DARKER = WOODS[0]
-    val WOOD_DARK = WOODS[1]
-    val WOOD = WOODS[2]
-    val WOOD_LIGHT = WOODS[3]
-    val WOOD_PALE = WOODS[4]
+    val WOOD_DARKER: Int get() = WOODS[0]
+    val WOOD_DARK: Int get() = WOODS[1]
+    val WOOD: Int get() = WOODS[2]
+    val WOOD_LIGHT: Int get() = WOODS[3]
+    val WOOD_PALE: Int get() = WOODS[4]
 
-    val PALM_DARK = GRASS[1]
-    val PALM = GRASS[3]
-    val PALM_LIGHT = GRASS[5]
-    val TRUNK = WOODS[3]
-    val TRUNK_DARK = WOODS[1]
+    val PALM_DARK: Int get() = GRASS[1]
+    val PALM: Int get() = GRASS[3]
+    val PALM_LIGHT: Int get() = GRASS[5]
+    val TRUNK: Int get() = WOODS[3]
+    val TRUNK_DARK: Int get() = WOODS[1]
 
     val FLOWER_Y = c(0xFFF5D76E)
     val FLOWER_P = c(0xFFF29AC0)
-    val FLOWER_W = PAPER[3]
-    val SHELL = PAPER[3]
+    val FLOWER_W: Int get() = PAPER[3]
+    val SHELL: Int get() = PAPER[3]
     val SHELL_PINK = c(0xFFE3A99A)
     val STARFISH = c(0xFFE8823A)
     val STARFISH_DARK = c(0xFFB5552A)
-    val PEBBLE = STONES[3]
+    val PEBBLE: Int get() = STONES[3]
 
-    val CUP = GRASS[0]
-    val CUP_LIP = GRASS[3]
-    val POLE = PAPER[3]
+    val CUP: Int get() = GRASS[0]
+    val CUP_LIP: Int get() = GRASS[3]
+    val POLE: Int get() = PAPER[3]
     val FLAG = c(0xFFE0483E)
     val FLAG_DARK = c(0xFFA8303A)
 
@@ -95,9 +113,9 @@ object Palette {
     // UI: dark strip (HUD, banners) and scorecard paper.
     val INK = c(0xFFF7F3E3)
     val INK_DIM = c(0xFFB9C4C9)
-    val INK_SHADOW = NIGHT[1]
+    val INK_SHADOW: Int get() = NIGHT[1]
     val PANEL = c(0xEE1B2A3A)
-    val PANEL_EDGE = NIGHT[4]
+    val PANEL_EDGE: Int get() = NIGHT[4]
     val GOLD = c(0xFFFFD866)
     val HOT = c(0xFFFF8A3D)
     val RED = FLAG
@@ -107,12 +125,18 @@ object Palette {
     val STAMP_RED = c(0xFFC8453A)
     val STAMP_GREEN = c(0xFF3F7A45)
 
-    private val darkerMap = HashMap<Int, Int>().apply {
-        for (r in ramps) for (i in r.indices) put(r[i], r[maxOf(0, i - 1)])
+    private val darkerMap = HashMap<Int, Int>()
+    private val lighterMap = HashMap<Int, Int>()
+
+    private fun rebuildMaps() {
+        darkerMap.clear(); lighterMap.clear()
+        for (r in ramps) for (i in r.indices) {
+            darkerMap[r[i]] = r[maxOf(0, i - 1)]
+            lighterMap[r[i]] = r[minOf(r.size - 1, i + 1)]
+        }
     }
-    private val lighterMap = HashMap<Int, Int>().apply {
-        for (r in ramps) for (i in r.indices) put(r[i], r[minOf(r.size - 1, i + 1)])
-    }
+
+    init { rebuildMaps() }
 
     /** One step down this colour's ramp (or a plain darken if it's not on a ramp). */
     fun darker(col: Int): Int = darkerMap[col] ?: shade(col, 0.78f)

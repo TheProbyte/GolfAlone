@@ -86,7 +86,7 @@ class UiPlaythroughTest {
         val c = game.buttonCenter(id)
         assertNotNull("button $id is showing", c)
         tap(c!!.first, c.second)
-        runUntil(2000) { !game.fading }
+        runUntil(2000) { !game.fading && !game.gliding }
     }
 
     /**
@@ -153,6 +153,13 @@ class UiPlaythroughTest {
         touch(MotionEvent.ACTION_UP, x + dx, y)
         run(300)
     }
+
+    /** A Pixel's system bars and gesture zones, in px. */
+    private fun pixelInsets(statusBar: Int = 63) = android.view.WindowInsets.Builder()
+        .setInsets(android.view.WindowInsets.Type.statusBars(), android.graphics.Insets.of(0, statusBar, 0, 0))
+        .setInsets(android.view.WindowInsets.Type.navigationBars(), android.graphics.Insets.of(0, 0, 0, 42))
+        .setInsets(android.view.WindowInsets.Type.systemGestures(), android.graphics.Insets.of(80, 0, 80, 84))
+        .build()
 
     @Test fun aRampJumpOnFirstLight() {
         val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
@@ -231,12 +238,7 @@ class UiPlaythroughTest {
     @Test fun playTheCourse() {
         val act = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         game = act.game
-        val insets = android.view.WindowInsets.Builder()
-            .setInsets(android.view.WindowInsets.Type.statusBars(), android.graphics.Insets.of(0, 63, 0, 0))
-            .setInsets(android.view.WindowInsets.Type.navigationBars(), android.graphics.Insets.of(0, 0, 0, 42))
-            .setInsets(android.view.WindowInsets.Type.systemGestures(), android.graphics.Insets.of(80, 0, 80, 84))
-            .build()
-        game.dispatchApplyWindowInsets(insets)
+        game.dispatchApplyWindowInsets(pixelInsets())
         run(600)
         val (lw, lh, scale) = game.logicalSize
         println("logical ${lw}x$lh at ${scale}x for ${game.width}x${game.height}")
@@ -250,6 +252,17 @@ class UiPlaythroughTest {
         assertFalse(game.debugOverlayOn)
         assertReachable(GameView.B_PLAY, 56f, 0.6f)
         assertReachable(GameView.B_HOLES, 48f, 0.6f)
+        assertReachable(GameView.B_BOOK, 48f, 0.6f)
+
+        // The book, before anything's been played.
+        press(GameView.B_BOOK)
+        assertEquals(GameView.Sheet.BOOK, game.sheetForTest)
+        run(300)
+        frame("01-book-stats-new")
+        press(GameView.B_TAB_CARDS)
+        assertEquals(1, game.bookTabForTest)
+        press(GameView.B_DONE)
+        assertEquals(GameView.Sheet.NONE, game.sheet)
 
         // Settings sheet.
         press(GameView.B_SETTINGS)
@@ -285,6 +298,9 @@ class UiPlaythroughTest {
         press(GameView.B_PLAY)
         assertEquals(GameView.Mode.PLAY, game.mode)
         assertTrue(game.courseRun)
+        // Play hides the status bar; the phone then reports insets without it (gesture zones stay).
+        game.dispatchApplyWindowInsets(pixelInsets(statusBar = 0))
+        run(32)
 
         // A pull that starts in the left gesture zone is left to the system (Back): no shot.
         touch(MotionEvent.ACTION_DOWN, 20f, game.height * 0.5f)
@@ -357,7 +373,23 @@ class UiPlaythroughTest {
                 assertTrue(game.onBack()) // Back on a card doesn't throw the round away
                 assertEquals(GameView.Mode.CARD, game.mode)
                 tap(game.width / 2f, game.height * 0.25f) // tap anywhere carries on
-                runUntil(2000) { !game.fading }
+                runUntil(2000) { !game.fading && !game.gliding }
+            } else if (i == 1) {
+                // Next hole: the view glides off this island and the next one rises from the sea.
+                run(320)
+                val (nx, ny) = game.buttonCenter(GameView.B_NEXT)!!
+                tap(nx, ny)
+                run(100)
+                assertTrue("gliding to the next island", game.gliding)
+                assertEquals("the old island scrolls away first", 1, game.holeIndex)
+                frame("h2-4-glide-out")
+                tap(game.width / 2f, game.height * 0.5f) // input waits for the glide
+                runUntil(2000) { game.holeIndex == 2 }
+                run(100)
+                assertTrue(game.gliding)
+                frame("h2-5-glide-in")
+                runUntil(2000) { !game.gliding }
+                assertEquals(GameView.Mode.PLAY, game.mode)
             } else press(GameView.B_NEXT)
         }
         assertEquals(GameView.Mode.FINAL, game.mode)
@@ -372,6 +404,22 @@ class UiPlaythroughTest {
         assertEquals(GameView.Mode.TITLE, game.mode)
         run(300)
         frame("91-title-best")
+
+        // The book after a round: stats counted, and postcards for holes beaten under par.
+        press(GameView.B_BOOK)
+        run(300)
+        frame("91-book-stats")
+        press(GameView.B_TAB_CARDS)
+        run(100)
+        frame("91-book-postcards")
+        press(GameView.B_DONE)
+
+        // Left alone, the title's backdrop drifts to the next hole.
+        val backdrop = game.holeIndex
+        run(9000)
+        runUntil(2000) { !game.gliding }
+        assertEquals((backdrop + 1) % n, game.holeIndex)
+        assertEquals(GameView.Mode.TITLE, game.mode)
 
         // Practise hole 1: everything is unlocked now.
         press(GameView.B_HOLES)
@@ -436,6 +484,13 @@ class UiPlaythroughTest {
         assertTrue("fast-forwarding", game.fastForwarding || !game.ballMoving)
         waitForRest()
         assertFalse(game.fastForwarding)
+
+        // Practice: holding the pause chip restarts the hole at once.
+        val (px0, py0) = game.buttonCenter(GameView.B_PAUSE)!!
+        longPress(px0, py0, 900)
+        runUntil(2000) { !game.fading }
+        assertEquals("restarted", 0, game.strokesForTest)
+        assertFalse(game.isPaused)
 
         // Practice pause offers Restart; Back closes the sheet.
         press(GameView.B_PAUSE)

@@ -27,7 +27,12 @@ to shoot, and play a quiet island course alone.
   - Hole select is a swipe carousel.
   - Tap anywhere after a hole to carry on.
   - Rounds save after every hole, and the title offers Continue.
-  - Settings: sound, vibration, left-handed and reduce motion.
+  - Settings: effects and surf volume sliders, vibration, left-handed, reduce motion,
+    status bar (hidden in play by default) and pull length (short, normal, long).
+  - In practice, hold the pause chip to restart the hole at once.
+  - One-time tips for ramps, sand, slopes, driftwood and ponds, shown near the feature.
+- **The Book** (on the title): your stats (rounds, aces, eagles, birdies, pars, jumps, longest
+  shot, best and average per hole) and a postcard of every hole you've beaten par on.
 - **While playing:** the top strip is information only.
   - Pause is a chip in the bottom corner that fires only on a clean tap.
   - Hold still to peek at the green.
@@ -38,6 +43,10 @@ to shoot, and play a quiet island course alone.
   - soft offset shadows and a 6 px outlined ball
   - a 5×7 pixel font
   - cloud shadows, swaying palms and dissolve transitions
+  - dawn on Driftwood Cove, as a swap of the colour ramps (not a filter)
+  - sun glints on open water, crabs on the beaches, butterflies, fish rings in ponds and a gull
+    that rests on a wall until the ball comes by
+  - a glide across the sea between holes, and a title that drifts from hole to hole
 - **Drag and pull back from anywhere.** Your thumb never covers the ball.
   - Power climbs with the drag, with a haptic tick and a click at every 10%.
   - Aim dots warm from white to gold to orange, and blink at full power.
@@ -56,6 +65,12 @@ to shoot, and play a quiet island course alone.
   - The camera glides at sub-pixel precision.
 - **Feel:** haptics built from the vibrator's primitives, and a live synth (ported from Arrow Unwind)
   for club knocks, wall taps, sand, splashes, lip-outs, a cup jingle and distant surf. Gulls fly over.
+  - A club swoosh, a trail that warms with power, splash and landing-dust sprites, and "SO CLOSE!"
+    for a near miss.
+  - An ace or an eagle slows down for its last stretch to the cup, then gulls lift off the green;
+    the result word lands on the card like a rubber stamp.
+- **Battery:** the screen draws at 30 fps when nothing moves and at the panel's rate otherwise. Long
+  press the logo for a frame-time overlay.
 - **Title screen and scorecard:** a result word (birdie, par, bogey…), the flag you earned, and
   your best score, saved on the device.
 

@@ -24,8 +24,9 @@
 3. 🔶 **QoL batch** (Q1, Q2 and Q4 done; Q3 sliders and Q5 tips left): what you found annoying, then Q1–Q5.
 4. 🔶 **Airborne ball (F1) and ramps (F2) are done.** The loft shot (F3) waits on one question: how should you choose a loft?
 4½. **Polish pass** ([POLISH_PASS_PLAN.md](POLISH_PASS_PLAN.md)): efficiency, beauty, fun and QoL,
-   with no rule changes. It starts with V1: the instrument fix, the idle throttle, and time of day
-   on First Light, checked on your phone. The loft shot and pars stay parked.
+   with no rule changes. **Done:** dawn on Driftwood Cove, the idle throttle, ambient life, the
+   glide between islands, tiered celebrations, the Book (stats and postcards), volume sliders and
+   pull length. The loft shot and pars stay parked.
 5. **M3: Saltmarsh and the tide.**
 6. **M4: Lighthouse Point** (wind, crabs, night), with time-of-day palettes (A10).
 7. **Later:** the connected island (D3), endless and daily holes, the ghost of your best round.

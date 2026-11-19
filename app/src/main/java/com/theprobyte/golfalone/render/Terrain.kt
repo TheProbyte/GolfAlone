@@ -62,6 +62,14 @@ class Terrain(private val hole: Hole) {
     /** Land within a few pixels of a pond (reeds, no surf). */
     private val nearPond = BooleanArray(w * h)
     private val rails = hole.rails
+    /** The sun path's centre line, through the middle of the map. */
+    private val sunLine = (w * 0.6f + h * 0.8f) / 2f
+    /** Where ambient life can be: beaches (crabs), flower patches (butterflies), ponds (fish), wall tops (gulls). */
+    val beachSpots = ArrayList<Int>()
+    val flowerSpots = ArrayList<Int>()
+    val pondSpots = ArrayList<Int>()
+    val wallTopSpots = ArrayList<Int>()
+
 
     init {
         computeLand()
@@ -73,6 +81,7 @@ class Terrain(private val hole: Hole) {
         for (y in 0 until h) for (x in 0 until w) px[y * w + x] = basePixel(x, y)
         decorate(px)
         castShadows(px)
+        findSpots()
         ground = Pix.bitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, w, 0, 0, w, h) }
     }
 
@@ -572,6 +581,18 @@ class Terrain(private val hole: Hole) {
         if (bank[i] > 0) return 0
         val reach = 0.6f + 2.2f * phase
         if (d < reach) return if (d > reach - 1.1f) Palette.FOAM else Palette.lerp(Palette.SHOAL, Palette.FOAM, 0.5f)
+        // The sun on the water: a diagonal path of twinkling glints (light from the top left).
+        if (d > 4f) {
+            val along = x * 0.6f + y * 0.8f - sunLine
+            if (along in -16f..16f) {
+                val gx = x / 5
+                val gy = y / 5
+                val jx = gx * 5 + (hash(gx, gy, 95) * 4).toInt()
+                val jy = gy * 5 + (hash(gx, gy, 96) * 4).toInt()
+                val on = ((hash(gx, gy, 97) * FRAMES).toInt() + f) % FRAMES < 3 && hash(gx, gy, 98) < 0.55f - kotlin.math.abs(along) / 40f
+                if (on && y == jy && (x == jx || x == jx + 1)) return Palette.alpha(Palette.FOAM, 210)
+            }
+        }
         if (d > 14f) {
             when (crest(x, y, f)) {
                 1 -> return Palette.MID
@@ -616,6 +637,28 @@ class Terrain(private val hole: Hole) {
             }
         }
         return out
+    }
+
+    private fun findSpots() {
+        for (gy in 0 until h step 7) for (gx in 0 until w step 7) {
+            val x = gx + (hash(gx, gy, 91) * 6).toInt()
+            val y = gy + (hash(gx, gy, 92) * 6).toInt()
+            if (x !in 2 until w - 3 || y !in 2 until h - 3) continue
+            val i = y * w + x
+            when {
+                land[i] && isPlain(i) && edge[i] in 1.5f..3f && !nearPond[i] -> beachSpots += i
+                pond[i] && edge[i] >= 4f -> pondSpots += i
+                kind[i] == K_WALL && isStone(x, y + 4) && isStone(x, y - 1) -> wallTopSpots += i
+                kind[i] == K_ROUGH && edge[i] > 5f && hash(gx, gy, 93) < 0.25f -> flowerSpots += i
+            }
+        }
+    }
+
+    /** Whether ([x], [y]) is inland water (a pond) rather than the sea. */
+    fun isPond(x: Float, y: Float): Boolean {
+        val px = x.toInt()
+        val py = y.toInt()
+        return px in 0 until w && py in 0 until h && pond[py * w + px]
     }
 
     /** For art experiments in tests: the land mask, bank rows and edge distances. */
@@ -663,8 +706,18 @@ class Terrain(private val hole: Hole) {
             return 0
         }
 
-        /** The open sea beyond the map, [FRAMES] tiles of [SEA_W]×[SEA_H]. */
-        val sea: Array<Bitmap> by lazy {
+        private var seaTiles: Array<Bitmap>? = null
+        private var seaMood: Mood? = null
+
+        /** The open sea beyond the map, [FRAMES] tiles of [SEA_W]×[SEA_H], rebuilt if the time of day changes. */
+        val sea: Array<Bitmap>
+            get() {
+                val cur = seaTiles
+                if (cur != null && seaMood == Palette.mood) return cur
+                return buildSea().also { seaTiles = it; seaMood = Palette.mood }
+            }
+
+        private fun buildSea(): Array<Bitmap> =
             Array(FRAMES) { f ->
                 val px = IntArray(SEA_W * SEA_H)
                 for (y in 0 until SEA_H) for (x in 0 until SEA_W) {
@@ -676,7 +729,6 @@ class Terrain(private val hole: Hole) {
                 }
                 Pix.bitmap(SEA_W, SEA_H).apply { setPixels(px, 0, SEA_W, 0, 0, SEA_W, SEA_H) }
             }
-        }
         const val BANK_H = 3
         /** First row of a wall tile's front face (rows FACE_TOP..7). */
         const val FACE_TOP = 5

@@ -1,7 +1,7 @@
 package com.theprobyte.golfalone.game
 
 /** A named set of holes played in order. */
-class Course(val name: String, val holes: List<Hole>) {
+class Course(val id: String, val name: String, val holes: List<Hole>, val mood: com.theprobyte.golfalone.render.Mood = com.theprobyte.golfalone.render.Mood.DAY) {
     val par get() = holes.sumOf { it.par }
 }
 
@@ -285,7 +285,7 @@ object Holes {
         ),
     )
 
-    val COVE = Course("DRIFTWOOD COVE", listOf(COVE_1, COVE_2, COVE_3, COVE_4, COVE_5, COVE_6))
+    val COVE = Course("cove", "DRIFTWOOD COVE", mood = com.theprobyte.golfalone.render.Mood.DAWN, holes = listOf(COVE_1, COVE_2, COVE_3, COVE_4, COVE_5, COVE_6))
 
     val all: List<Hole> get() = COVE.holes
 }

@@ -15,12 +15,36 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         progress = Progress(this)
-        sfx = Sfx(this).apply { enabled = progress.sound }
+        sfx = Sfx(this).apply { effectsVolume = progress.effectsVolume; surfVolume = progress.surfVolume }
         haptics = Haptics(this).apply { enabled = progress.haptics }
         game = GameView(this, progress, sfx, haptics)
+        game.onImmersive = { hide -> setStatusBarHidden(hide) }
         setContentView(game)
         goEdgeToEdge()
         game.post { preferHighRefreshRate() }
+        listenToFrameMetrics()
+    }
+
+    /** Full-screen play: hide the status bar while a hole is on, show it again in menus. */
+    private fun setStatusBarHidden(hide: Boolean) {
+        if (Build.VERSION.SDK_INT < 30) return
+        val c = window.insetsController ?: return
+        if (hide) {
+            c.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            c.hide(android.view.WindowInsets.Type.statusBars())
+        } else c.show(android.view.WindowInsets.Type.statusBars())
+    }
+
+    /** Android's own per-frame timings (upload, GPU, total) for the frame-time overlay. */
+    private fun listenToFrameMetrics() {
+        if (Build.VERSION.SDK_INT < 26) return
+        val thread = android.os.HandlerThread("frame-metrics").apply { start() }
+        window.addOnFrameMetricsAvailableListener({ _, m, _ ->
+            val ms = 1e-6f
+            val gpu = if (Build.VERSION.SDK_INT >= 31) m.getMetric(android.view.FrameMetrics.GPU_DURATION) * ms else -1f
+            game.onFrameMetrics(m.getMetric(android.view.FrameMetrics.TOTAL_DURATION) * ms,
+                m.getMetric(android.view.FrameMetrics.SYNC_DURATION) * ms, gpu)
+        }, android.os.Handler(thread.looper))
     }
 
     override fun onResume() {

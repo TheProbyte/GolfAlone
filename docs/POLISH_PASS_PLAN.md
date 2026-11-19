@@ -1,7 +1,19 @@
 # Golf Alone: polish pass (efficiency, beauty, fun, QoL)
 
-> **Status:** plan only. No rule changes in this pass: `GoldenShotsTest` and the planner's
-> best scores must stay identical throughout. Strike or reorder anything by ID.
+> **Status: built.** Every item below is in the game (E1–E5, B1–B5, F1–F4, Q3, Q5, Q7–Q9).
+> No rule changes: `GoldenShotsTest` and the planner's best scores are unchanged.
+> Picks used: Driftwood Cove is at **dawn**; the status bar **hides during play** and comes back in menus.
+>
+> Notes on what was built:
+> - **E2** `RedrawPolicy`: 30 fps when nothing moves, vsync otherwise; at-rest animations step at 15 Hz.
+> - **E3** the first map is built off the main thread behind a sea-coloured splash (`START` in the overlay).
+> - **E4** icon tints are cached per colour, HUD strings rebuild only on change, and the UI layer redraws only when it changes.
+> - **E5** save keys carry the course id (`best_cove_3`), with a one-time migration; GameView's screens live in their own files.
+> - **B1** `Mood` swaps the world's ramps (never a filter); a test checks every surface stays apart in every mood.
+> - **B3** crabs duck into the sand when the ball comes near; the wall gull takes off when a moving ball passes.
+> - **B5** NEXT glides off one island and up onto the next (the sea's pattern lines up, so the water never jumps); the title drifts to the next hole every 8 s.
+> - **F1** an ace or eagle: the last stretch to the cup plays at 0.35× (the physics runs the same steps), gulls lift off the green and the camera punches; birdies and better get the stamp's sparkle.
+> - **F3/F4** the title's **BOOK** has your stats and a postcard for every hole beaten under par.
 >
 > **Board:** [`docs/style/time-of-day-board.png`](style/time-of-day-board.png) shows three moods
 > as 1:1 crops of a real frame. It's **mood only**: a brightness filter. The game would swap

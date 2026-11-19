@@ -14,12 +14,18 @@ class Sfx(context: Context) {
 
     private val engine = AudioEngine(context)
 
-    var enabled = true
+    /** Effects volume, 0..1 (0 is off). */
+    var effectsVolume = 0.85f
         set(v) {
-            field = v
-            val g = if (v) 0.85f else 0f
+            field = v.coerceIn(0f, 1f)
+            val g = field
             engine.post { it.effectsGain = g }
         }
+
+    /** Distant surf, 0..1, relative to the effects volume. */
+    var surfVolume = 0.7f
+
+    val enabled get() = effectsVolume > 0f
 
     init { engine.post { it.effectsGain = 0.85f } }
 
@@ -99,6 +105,7 @@ class Sfx(context: Context) {
         val root = 67f // G
         val notes = when {
             holeInOne -> floatArrayOf(0f, 4f, 7f, 12f, 16f, 19f, 24f)
+            toPar <= -2 -> floatArrayOf(0f, 4f, 7f, 12f, 16f, 19f)
             toPar < 0 -> floatArrayOf(0f, 4f, 7f, 12f, 16f)
             toPar == 0 -> floatArrayOf(0f, 4f, 7f, 12f)
             else -> floatArrayOf(0f, 3f, 7f)
@@ -110,9 +117,17 @@ class Sfx(context: Context) {
     }
 
     /** Distant surf for the island's ambience. */
-    fun surf(pan: Float) = play {
-        it.sweep(0.13f, pan, 2600f, 750f, 230f, q = 0.7f)
+    fun surf(pan: Float) {
+        val v = surfVolume
+        if (v <= 0f) return
+        play { it.sweep(0.19f * v, pan, 2600f, 750f, 230f, q = 0.7f) }
     }
 
     fun tap() = play { it.click(0.5f) }
+
+    /** The result word landing on the card: a low, papery thump. */
+    fun stamp() = play {
+        it.tok(115f, 0.6f, 0f)
+        it.sweep(0.18f, 0f, 90f, 900f, 300f, q = 0.8f)
+    }
 }

@@ -20,12 +20,14 @@ import com.theprobyte.golfalone.game.Physics
 import com.theprobyte.golfalone.game.PhysicsEvents
 import com.theprobyte.golfalone.game.TILE
 import com.theprobyte.golfalone.game.Tile
+import com.theprobyte.golfalone.render.Ambient
 import com.theprobyte.golfalone.render.Palette
 import com.theprobyte.golfalone.render.Pix
 import com.theprobyte.golfalone.render.Pix.px
 import com.theprobyte.golfalone.render.Pix.rect
 import com.theprobyte.golfalone.render.PixelFont
 import com.theprobyte.golfalone.render.PixelFont.Face
+import com.theprobyte.golfalone.render.SpriteFx
 import com.theprobyte.golfalone.render.Sprites
 import com.theprobyte.golfalone.render.Terrain
 import java.util.concurrent.Executors
@@ -62,182 +64,230 @@ import kotlin.random.Random
  */
 class GameView(
     context: Context,
-    private val progress: Progress,
-    private val sfx: Sfx,
-    private val haptics: Haptics,
+    internal val progress: Progress,
+    internal val sfx: Sfx,
+    internal val haptics: Haptics,
 ) : View(context), PhysicsEvents {
 
     enum class Mode { TITLE, SELECT, PLAY, CARD, FINAL }
-    enum class Sheet { NONE, PAUSE, SETTINGS }
+    enum class Sheet { NONE, PAUSE, SETTINGS, BOOK }
 
     var mode = Mode.TITLE
         private set
     var sheet = Sheet.NONE
         private set
-    private var sheetReturn = Sheet.NONE
-    private var sheetT = 0f
+    internal var sheetReturn = Sheet.NONE
+    internal var sheetT = 0f
 
     // ---------------------------------------------------------------- course
 
     val course: Course = Holes.COVE
-    private val n = course.holes.size
-    private val builder = Executors.newSingleThreadExecutor { r -> Thread(r, "terrain").apply { isDaemon = true } }
-    private val terrains: List<Future<Terrain>> = course.holes.map { h -> builder.submit<Terrain> { Terrain(h) } }
-    private val thumbs = arrayOfNulls<Bitmap>(n)
-    private var thumbBox = 0L
+    /** The course's time of day, set before anything is baked from the palette. */
+    @Suppress("unused") internal val moodSet = Palette.setMood(course.mood)
+    internal val n = course.holes.size
+    internal val builder = Executors.newSingleThreadExecutor { r -> Thread(r, "terrain").apply { isDaemon = true } }
+    internal val terrains: List<Future<Terrain>> = course.holes.map { h -> builder.submit<Terrain> { Terrain(h) } }
+    internal val thumbs = arrayOfNulls<Bitmap>(n)
+    internal var thumbBox = 0L
 
     var holeIndex = 0
         private set
     var hole: Hole = course.holes[0]
         private set
-    private var physics = Physics(hole)
-    private var terrain: Terrain = terrains[0].get()
-    private var slopeTiles = IntArray(0)
+    internal var physics = Physics(hole)
+    /** Looks ahead along a shot near the cup, to slow down the finish of a great one. */
+    internal var scratch = Physics(hole)
+    internal val ambient = Ambient()
+    internal val spriteFx = SpriteFx()
+    internal lateinit var terrain: Terrain
+    /** False until the first map is built (off the main thread); a splash shows meanwhile. */
+    internal var ready = false
+    /** Time from the view's creation to the first real frame (ms), for the overlay. */
+    internal val createdAt = SystemClock.uptimeMillis()
+    internal var startupMs = -1L
+        private set
+    internal var slopeTiles = IntArray(0)
 
     /** A full round (scores count) rather than practising one hole. */
     var courseRun = false
         private set
-    private val scores = IntArray(n)
-    private var courseNewBest = false
-    private val flownOver = BooleanArray(n)
+    internal val scores = IntArray(n)
+    internal var courseNewBest = false
+    internal val flownOver = BooleanArray(n)
 
     /** The hole shown in the select carousel, and its slide animation. */
-    private var sel = 0
-    private var selT = 1f
-    private var selDir = 0
+    internal var sel = 0
+    internal var selT = 1f
+    internal var selDir = 0
 
     // ---------------------------------------------------------------- buffers
 
-    private var scale = 1
-    private var lw = 0
-    private var lh = 0
-    private var offX = 0f
-    private var offY = 0f
-    private var world: Bitmap? = null
-    private var ui: Bitmap? = null
-    private val wc = Canvas()
-    private val uc = Canvas()
-    private val blit = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
-    private val dim = Paint().apply { isFilterBitmap = false; colorFilter = android.graphics.PorterDuffColorFilter(0xB0101828.toInt(), PorterDuff.Mode.SRC_ATOP) }
-    private val src = Rect()
-    private val dst = RectF()
-    private val density = resources.displayMetrics.density
-    private val clouds = Array(3) { Sprites.cloudShadow(it + 3) }
+    internal var scale = 1
+    internal var lw = 0
+    internal var lh = 0
+    internal var offX = 0f
+    internal var offY = 0f
+    internal var world: Bitmap? = null
+    internal var ui: Bitmap? = null
+    internal val wc = Canvas()
+    internal val uc = Canvas()
+    internal val blit = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
+    internal val dim = Paint().apply { isFilterBitmap = false; colorFilter = android.graphics.PorterDuffColorFilter(0xB0101828.toInt(), PorterDuff.Mode.SRC_ATOP) }
+    internal val src = Rect()
+    internal val dst = RectF()
+    internal val density = resources.displayMetrics.density
+    internal val clouds = Array(3) { Sprites.cloudShadow(it + 3) }
 
     // Insets (screen px)
-    private var insetTopPx = 0
-    private var insetBottomPx = 0
-    private var gestLeft = 0
-    private var gestRight = 0
-    private var gestBottom = 0
-    private val insetTop get() = ceil(insetTopPx / scale.toFloat()).toInt()
-    private val insetBottom get() = ceil(insetBottomPx / scale.toFloat()).toInt()
+    internal var insetTopPx = 0
+    internal var insetBottomPx = 0
+    internal var gestLeft = 0
+    internal var gestRight = 0
+    internal var gestBottom = 0
+    internal val insetTop get() = ceil(insetTopPx / scale.toFloat()).toInt()
+    internal val insetBottom get() = ceil(insetBottomPx / scale.toFloat()).toInt()
     /** Lowest y a button may reach: above the nav bar and the Home-swipe zone. */
-    private val safeBottom get() = lh - max(insetBottom, ceil(gestBottom / scale.toFloat()).toInt()) - 6
+    internal val safeBottom get() = lh - max(insetBottom, ceil(gestBottom / scale.toFloat()).toInt()) - 6
 
     // ---------------------------------------------------------------- state
 
-    private var camX = 0f
-    private var camY = 0f
-    private var camSnap = true
-    private var lastMs = 0L
-    private var time = 0f
-    private var acc = 0f
+    internal var camX = 0f
+    internal var camY = 0f
+    internal var camSnap = true
+    internal var lastMs = 0L
+    internal var time = 0f
+    internal var acc = 0f
 
-    private var strokes = 0
-    private var sinkT = -1f
-    private var cardT = 0f
-    private var modeT = 0f
-    private var holeT = 0f
-    private var newBest = false
-    private var lastWallHaptic = 0f
-    private var popT = -1f
-    private var shakeT = -1f
-    private var rollDist = 0f
-    private var teeterT = -1f
+    internal var strokes = 0
+    internal var sinkT = -1f
+    internal var cardT = 0f
+    internal var modeT = 0f
+    internal var holeT = 0f
+    internal var newBest = false
+    internal var lastWallHaptic = 0f
+    internal var popT = -1f
+    internal var shakeT = -1f
+    internal var rollDist = 0f
+    internal var teeterT = -1f
+    internal var cameraMoving = false
+    /** [time] stepped at 15 Hz, for animations that must keep still between idle frames. */
+    internal val steppedTime get() = floor(time * 15f) / 15f
+    // Hole-to-hole glide: the view slides off the old island (offset 0 → +D, so it scrolls up)
+    // and the new one rises from below (−D → 0), across open sea.
+    internal var glideT = -1f
+    internal var glideOffset = 0f
+    internal var glideOffsetX = 0f
+    internal var glideFromX = 0f
+    internal var glideFromY = 0f
+    internal var glideAction: (() -> Unit)? = null
+    internal var glideBlocks = false
+    internal var titlePanAt = TITLE_PAN_S
+    /** The hole last really played (the title's backdrop drifts; hole select opens on this one). */
+    internal var lastPlayed = 0
+    // Celebrations: gulls rising from the cup, a camera punch, a slowed finish, the card stamp.
+    internal var celebrateT = -1f
+    internal var punchT = -1f
+    internal var slowMo = false
+    internal var slowChecked = false
+    internal var stamped = false
+    internal var stampT = -1f
+    internal var greatHole = false
+    // The shot in flight: its power (for the trail's colour) and where it started (longest shot).
+    internal var shotPower = 0f
+    internal var shotX = 0f
+    internal var shotY = 0f
+    internal var shotLive = false
+    internal var bookTab = 0
+    /** Bumped on any input or state change the UI layer shows; see [uiNeedsRedraw]. */
+    internal var uiVersion = 0
+    internal var uiDrawnVersion = -1
+    internal var uiDrawnKey = 0L
+    internal var worstFrameMs = 0f
+    internal var worstDrawMs = 0f
     /** The player tapped while the ball rolled: run the roll at [FAST_FORWARD]×. */
-    private var fastForward = false
-    private var flyover = false
+    internal var fastForward = false
+    internal var flyover = false
 
-    private var fadeT = -1f
-    private var fadeAction: (() -> Unit)? = null
-    private var fadeDone = false
+    internal var fadeT = -1f
+    internal var fadeAction: (() -> Unit)? = null
+    internal var fadeDone = false
 
-    private val reduceMotion get() = progress.reduceMotion
+    internal val reduceMotion get() = progress.reduceMotion
 
     // Aim and peek
-    private var aiming = false
-    private var aimPointer = -1
-    private var aimStartT = 0f
-    private var aimMoved = false
-    private var peeking = false
-    private var downX = 0f
-    private var downY = 0f
-    private var curX = 0f
-    private var curY = 0f
-    private var power = 0f
-    private var tickStep = 0
-    private val cancelPx get() = 14f * density
-    private val slopPx get() = 8f * density
-    private val maxDragPx get() = 0.38f * width
+    internal var aiming = false
+    internal var aimPointer = -1
+    internal var aimStartT = 0f
+    internal var aimMoved = false
+    internal var peeking = false
+    internal var downX = 0f
+    internal var downY = 0f
+    internal var curX = 0f
+    internal var curY = 0f
+    internal var power = 0f
+    internal var tickStep = 0
+    internal val cancelPx get() = 14f * density
+    internal val slopPx get() = 8f * density
+    internal val maxDragPx get() = DRAG_LENGTHS[progress.dragLength] * width
 
     // Other gestures
-    private var swipeX = Float.NaN
-    private var swipeY = 0f
-    private var tapAnywhere = false
-    private var tapOutside = false
-    private var logoDownT = -1f
+    internal var swipeX = Float.NaN
+    internal var swipeY = 0f
+    internal var tapAnywhere = false
+    internal var tapOutside = false
+    internal var logoDownT = -1f
 
     // Effects
-    private val rnd = Random(7)
-    private val pn = 160
-    private val pX = FloatArray(pn); private val pY = FloatArray(pn)
-    private val pVX = FloatArray(pn); private val pVY = FloatArray(pn)
-    private val pLife = FloatArray(pn); private val pMax = FloatArray(pn)
-    private val pCol = IntArray(pn)
-    private var pNext = 0
+    internal val rnd = Random(7)
+    internal val pn = 160
+    internal val pX = FloatArray(pn); internal val pY = FloatArray(pn)
+    internal val pVX = FloatArray(pn); internal val pVY = FloatArray(pn)
+    internal val pLife = FloatArray(pn); internal val pMax = FloatArray(pn)
+    internal val pCol = IntArray(pn)
+    internal var pNext = 0
 
-    private val rn = 8
-    private val rX = FloatArray(rn); private val rY = FloatArray(rn)
-    private val rT = FloatArray(rn) { -1f }; private val rDur = FloatArray(rn)
-    private val rRad = FloatArray(rn); private val rCol = IntArray(rn)
-    private var rNext = 0
+    internal val rn = 8
+    internal val rX = FloatArray(rn); internal val rY = FloatArray(rn)
+    internal val rT = FloatArray(rn) { -1f }; internal val rDur = FloatArray(rn)
+    internal val rRad = FloatArray(rn); internal val rCol = IntArray(rn)
+    internal var rNext = 0
 
-    private val tn = 10
-    private val tX = FloatArray(tn); private val tY = FloatArray(tn); private val tAt = FloatArray(tn) { -9f }
-    private var tNext = 0
-    private var tLast = 0f
+    internal val tn = 10
+    internal val tX = FloatArray(tn); internal val tY = FloatArray(tn); internal val tAt = FloatArray(tn) { -9f }
+    internal var tNext = 0
+    internal var tLast = 0f
 
-    private var msg: String? = null
-    private var msgX = 0f
-    private var msgY = 0f
-    private var msgT = 0f
-    private var msgCol = Palette.INK
-    private var msgUi = false
+    internal var msg: String? = null
+    internal var msgX = 0f
+    internal var msgY = 0f
+    internal var msgT = 0f
+    internal var msgCol = Palette.INK
+    internal var msgUi = false
 
-    private var gullT = -1f
-    private var gullY = 0f
-    private var gullDir = 1f
-    private var gullNext = 4f
-    private var surfNext = 1.5f
+    internal var gullT = -1f
+    internal var gullY = 0f
+    internal var gullDir = 1f
+    internal var gullNext = 4f
+    internal var surfNext = 1.5f
 
     // Frame times for the debug readout.
-    private val frameMs = FloatArray(120)
-    private var frameNext = 0
+    internal val frameMs = FloatArray(120)
+    internal var frameNext = 0
     /** How long each frame took to update and draw (ms), separate from the time between frames. */
-    private val drawMs = FloatArray(120)
-    private var drawNext = 0
+    internal val drawMs = FloatArray(120)
+    internal var drawNext = 0
 
     // ---------------------------------------------------------------- buttons
 
-    private val maxButtons = 24
-    private val btnIds = IntArray(maxButtons)
-    private val btnHit = Array(maxButtons) { Rect() }
-    private var btnCount = 0
-    private var pressedId = NONE
-    private var pressX = 0
-    private var pressY = 0
-    private val sheetRect = Rect()
+    internal val maxButtons = 24
+    internal val btnIds = IntArray(maxButtons)
+    internal val btnHit = Array(maxButtons) { Rect() }
+    internal var btnCount = 0
+    internal var pressedId = NONE
+    internal var pressStartT = 0f
+    internal var pressX = 0
+    internal var pressY = 0
+    internal val sheetRect = Rect()
 
     /** Labels that didn't fit their button (checked by the UI test). */
     internal val textOverflows = LinkedHashSet<String>()
@@ -245,11 +295,10 @@ class GameView(
     init {
         isFocusable = true
         setOnApplyWindowInsetsListener { _, insets -> applyInsets(insets); insets }
-        loadHole(0)
     }
 
     @Suppress("DEPRECATION")
-    private fun applyInsets(insets: WindowInsets) {
+    internal fun applyInsets(insets: WindowInsets) {
         if (Build.VERSION.SDK_INT >= 30) {
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
             val g = insets.getInsets(WindowInsets.Type.systemGestures())
@@ -281,11 +330,17 @@ class GameView(
 
     // ---------------------------------------------------------------- flow
 
-    private fun loadHole(i: Int) {
+    /** [backdrop]: only showing the hole behind the title, so it doesn't use up the hole's flyover. */
+    internal fun loadHole(i: Int, backdrop: Boolean = false) {
         holeIndex = i
+        if (!backdrop) lastPlayed = i
         hole = course.holes[i]
         physics = Physics(hole)
+        scratch = Physics(hole)
         terrain = terrains[i].get()
+        ambient.reset(terrain)
+        spriteFx.clear()
+        celebrateT = -1f; punchT = -1f; slowMo = false; slowChecked = false; shotLive = false
         for (k in 0 until n) if (k != i && k != i + 1 && terrains[k].isDone) terrains[k].get().releaseWater()
         if (i + 1 < n) builder.submit { terrains[i + 1].get().prepareWater() }
         slopeTiles = (0 until hole.w * hole.h)
@@ -299,44 +354,98 @@ class GameView(
         popT = -1f
         rollDist = 0f
         holeT = 0f
+        worstFrameMs = 0f
+        worstDrawMs = 0f
+        uiVersion++
         for (k in 0 until pn) pLife[k] = 0f
         for (k in 0 until rn) rT[k] = -1f
         for (k in 0 until tn) tAt[k] = -9f
         msg = null
         // A long hole opens on the flag the first time you see it, then glides back to the tee.
-        flyover = lh > 0 && wantsFlyover()
+        flyover = !backdrop && lh > 0 && wantsFlyover()
         if (flyover) flownOver[i] = true
         camSnap = true
     }
 
-    private fun wantsFlyover() = isLong() && !flownOver[holeIndex] && !reduceMotion
+    internal fun wantsFlyover() = isLong() && !flownOver[holeIndex] && !reduceMotion
 
-    private fun fitsVertically() = hole.pxH <= playBottom - playTop
+    internal fun fitsVertically() = hole.pxH <= playBottom - playTop
 
     /** The green is out of sight from the tee: worth a flyover, and a peek hint. */
-    private fun isLong() = hole.pxH - (playBottom - playTop) > LONG_SCROLL
+    internal fun isLong() = hole.pxH - (playBottom - playTop) > LONG_SCROLL
 
-    private fun setMode(m: Mode) {
+    internal fun setMode(m: Mode) {
         mode = m
         modeT = 0f
         pressedId = NONE
         sheet = Sheet.NONE
         tapAnywhere = false
-        if (m == Mode.CARD) cardT = 0f
+        if (m == Mode.CARD) { cardT = 0f; stamped = false; stampT = -1f }
+        if (m == Mode.TITLE) titlePanAt = TITLE_PAN_S
         if (m != Mode.PLAY) flyover = false
         keepScreenOn = m == Mode.PLAY
+        applyImmersive()
+    }
+
+    /** Called with true to hide the status bar (playing, if the setting is on), false to show it. */
+    var onImmersive: ((Boolean) -> Unit)? = null
+
+    internal fun applyImmersive() {
+        onImmersive?.invoke(mode == Mode.PLAY && progress.hideStatusBar)
     }
 
     /** Dissolves out, runs [action], dissolves back in. Input waits until it's done. */
-    private fun fadeTo(action: () -> Unit) {
+    internal fun fadeTo(action: () -> Unit) {
         if (fadeT >= 0f) return
+        if (glideT >= 0f) { glideT = -1f; glideAction = null; glideOffset = 0f; glideOffsetX = 0f } // the fade hides it
         fadeT = 0f
         fadeAction = action
         fadeDone = false
         sfx.whoosh()
     }
 
-    private fun openSheet(s: Sheet) {
+    /**
+     * Slides the view off this island and onto the next one across the sea, running [action]
+     * (which loads the hole) at the halfway point. [blockInput] holds input until it lands.
+     */
+    internal fun glideTo(blockInput: Boolean, action: () -> Unit) {
+        if (glideT >= 0f || fadeT >= 0f) return
+        glideT = 0f
+        glideAction = action
+        glideBlocks = blockInput
+        sfx.whoosh()
+    }
+
+    internal fun updateGlide(dt: Float) {
+        if (glideT < 0f) return
+        glideT += dt
+        val d = (lh + 16).toFloat()
+        val act = glideAction
+        if (act != null) {
+            if (glideT < GLIDE_S) { val k = glideT / GLIDE_S; glideOffset = d * k * k; return }
+            // Halfway: swap islands. The new view starts where the sea's pattern lines up with
+            // the old one, so the water runs on without a jump.
+            val oldX = camX + glideOffsetX
+            val oldY = camY + glideOffset
+            act()
+            glideAction = null
+            updateCamera(0f)
+            glideFromY = -d + floorModF(oldY - (camY - d), Terrain.SEA_H.toFloat())
+            var gx = floorModF(oldX - camX, Terrain.SEA_W.toFloat())
+            if (gx > Terrain.SEA_W / 2f) gx -= Terrain.SEA_W
+            glideFromX = gx
+            glideT = GLIDE_S
+        }
+        val k = ((glideT - GLIDE_S) / GLIDE_S).coerceIn(0f, 1f)
+        val e = 1f - (1f - k) * (1f - k)
+        glideOffset = glideFromY * (1f - e)
+        glideOffsetX = glideFromX * (1f - e)
+        if (k >= 1f) { glideT = -1f; glideOffset = 0f; glideOffsetX = 0f }
+    }
+
+    internal fun floorModF(a: Float, m: Float): Float { val r = a % m; return if (r < 0f) r + m else r }
+
+    internal fun openSheet(s: Sheet) {
         sheetReturn = if (s == Sheet.SETTINGS) sheet else Sheet.NONE
         sheet = s
         sheetT = 0f
@@ -344,7 +453,7 @@ class GameView(
         peeking = false
     }
 
-    private fun closeSheet() {
+    internal fun closeSheet() {
         sheet = if (sheet == Sheet.SETTINGS) sheetReturn else Sheet.NONE
         sheetReturn = Sheet.NONE
         sheetT = 1f
@@ -359,7 +468,7 @@ class GameView(
         setMode(Mode.PLAY)
     }
 
-    private fun continueRound() = fadeTo {
+    internal fun continueRound() = fadeTo {
         courseRun = true
         val saved = progress.runScores(n)
         for (i in 0 until n) scores[i] = saved[i]
@@ -376,30 +485,30 @@ class GameView(
         setMode(Mode.PLAY)
     }
 
-    private fun practise(i: Int) = fadeTo {
+    internal fun practise(i: Int) = fadeTo {
         courseRun = false
         loadHole(i)
         setMode(Mode.PLAY)
     }
 
-    private fun toTitle() = fadeTo {
+    internal fun toTitle() = fadeTo {
         physics.reset()
         aiming = false
         setMode(Mode.TITLE)
     }
 
-    private fun toSelect() = fadeTo {
+    internal fun toSelect() = fadeTo {
         aiming = false
-        sel = holeIndex
+        sel = lastPlayed
         selT = 1f
         setMode(Mode.SELECT)
     }
 
-    private val hasSavedRound get() = progress.runHole in 0 until n && (progress.runHole > 0 || progress.runStrokes > 0)
+    internal val hasSavedRound get() = progress.runHole in 0 until n && (progress.runHole > 0 || progress.runStrokes > 0)
 
     /** System back: close a sheet, pause a hole, or step back towards the title. */
     fun onBack(): Boolean {
-        if (fadeT >= 0f) return true
+        if (fadeT >= 0f || (glideT >= 0f && glideBlocks)) return true
         if (sheet != Sheet.NONE) { closeSheet(); sfx.tap(); return true }
         when (mode) {
             Mode.TITLE -> return false
@@ -412,7 +521,7 @@ class GameView(
     }
 
     /** In a round, remember this hole's strokes and where the ball lies, so quitting is no free retry. */
-    private fun saveHoleInProgress() {
+    internal fun saveHoleInProgress() {
         if (!courseRun || mode != Mode.PLAY || sinkT >= 0f) return
         if (physics.moving) {
             // Play the shot out first, so the ball is saved where it really stops. It runs
@@ -433,30 +542,30 @@ class GameView(
         pressedId = NONE
     }
 
-    private fun toPar(): Int {
+    internal fun toPar(): Int {
         var s = 0
         for (i in 0 until n) if (scores[i] > 0) s += scores[i] - course.holes[i].par
         return s
     }
 
-    private fun parText(d: Int) = when { d == 0 -> "E"; d > 0 -> "+$d"; else -> "$d" }
+    internal fun parText(d: Int) = when { d == 0 -> "E"; d > 0 -> "+$d"; else -> "$d" }
 
     // ---------------------------------------------------------------- input
 
-    private fun inGestureZone(x: Float, y: Float) =
+    internal fun inGestureZone(x: Float, y: Float) =
         x < gestLeft || x > width - gestRight || y > height - gestBottom
 
-    private fun toLX(sx: Float) = (sx - offX) / scale
-    private fun toLY(sy: Float) = (sy - offY) / scale
+    internal fun toLX(sx: Float) = (sx - offX) / scale
+    internal fun toLY(sy: Float) = (sy - offY) / scale
 
-    private fun hitButton(lx: Int, ly: Int): Int {
+    internal fun hitButton(lx: Int, ly: Int): Int {
         for (i in btnCount - 1 downTo 0) if (btnHit[i].contains(lx, ly)) return btnIds[i]
         return NONE
     }
 
-    private val canAim get() = mode == Mode.PLAY && sheet == Sheet.NONE && !physics.moving && !physics.inCup && !flyover
+    internal val canAim get() = mode == Mode.PLAY && sheet == Sheet.NONE && !physics.moving && !physics.inCup && !flyover
 
-    private fun startAim(x: Float, y: Float, pointer: Int) {
+    internal fun startAim(x: Float, y: Float, pointer: Int) {
         aiming = true
         aimPointer = pointer
         aimStartT = time
@@ -467,7 +576,9 @@ class GameView(
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (fadeT >= 0f) return true
+        wake()
+        uiVersion++
+        if (fadeT >= 0f || !ready || (glideT >= 0f && glideBlocks)) return true
         val lx = floor(toLX(e.x)).toInt()
         val ly = floor(toLY(e.y)).toInt()
         when (e.actionMasked) {
@@ -477,6 +588,8 @@ class GameView(
                 val id = hitButton(lx, ly)
                 if (id != NONE) {
                     pressedId = id; pressX = lx; pressY = ly
+                    pressStartT = time
+                    if (id == B_VOL_FX || id == B_VOL_SURF) setSlider(id, lx)
                     haptics.tap(this)
                 } else if (sheet != Sheet.NONE) {
                     tapOutside = !sheetRect.contains(lx, ly)
@@ -512,6 +625,7 @@ class GameView(
                     }
                 }
                 if (pressedId != NONE) { pressX = lx; pressY = ly }
+                if (pressedId == B_VOL_FX || pressedId == B_VOL_SURF) setSlider(pressedId, lx)
                 if (tapAnywhere && hypot(e.x - downX, e.y - downY) > slopPx) tapAnywhere = false
                 if (logoDownT >= 0f && hypot(e.x - downX, e.y - downY) > slopPx) logoDownT = -1f
             }
@@ -525,7 +639,8 @@ class GameView(
                 }
                 val id = pressedId
                 pressedId = NONE
-                if (id != NONE && hitButton(lx, ly) == id) onButton(id)
+                if (id == B_VOL_FX || id == B_VOL_SURF) sfx.tap() // a click at the new level
+                else if (id != NONE && hitButton(lx, ly) == id) onButton(id)
                 if (!swipeX.isNaN()) {
                     val dx = e.x - swipeX
                     if (abs(dx) > 36f * density && abs(dx) > abs(e.y - swipeY) * 1.5f) moveSelection(if (dx < 0) 1 else -1)
@@ -543,7 +658,7 @@ class GameView(
         return true
     }
 
-    private fun finishAim(x: Float, y: Float) {
+    internal fun finishAim(x: Float, y: Float) {
         aiming = false
         if (peeking) { peeking = false; return } // a peek never shoots
         curX = x; curY = y
@@ -551,7 +666,7 @@ class GameView(
         if (power > 0f) shoot()
     }
 
-    private fun moveSelection(d: Int) {
+    internal fun moveSelection(d: Int) {
         val next = (sel + d).coerceIn(0, n - 1)
         if (next == sel) return
         sel = next
@@ -561,7 +676,7 @@ class GameView(
         haptics.tap(this)
     }
 
-    private fun onButton(id: Int) {
+    internal fun onButton(id: Int) {
         sfx.tap()
         when (id) {
             B_PLAY -> if (hasSavedRound) continueRound() else startCourse()
@@ -569,8 +684,12 @@ class GameView(
             B_HOLES -> toSelect()
             B_BACK -> toTitle()
             B_SETTINGS -> openSheet(Sheet.SETTINGS)
+            B_BOOK -> { bookTab = 0; openSheet(Sheet.BOOK) }
+            B_TAB_STATS -> bookTab = 0
+            B_TAB_CARDS -> bookTab = 1
             B_DONE -> closeSheet()
-            B_SOUND -> { progress.sound = !progress.sound; sfx.enabled = progress.sound; sfx.tap() }
+            B_STATUS -> { progress.hideStatusBar = !progress.hideStatusBar; applyImmersive() }
+            B_PULL -> progress.dragLength = (progress.dragLength + 1) % 3
             B_BUZZ -> { progress.haptics = !progress.haptics; haptics.enabled = progress.haptics; haptics.tap(this) }
             B_LEFT -> progress.leftHanded = !progress.leftHanded
             B_MOTION -> progress.reduceMotion = !progress.reduceMotion
@@ -581,7 +700,7 @@ class GameView(
                 saveHoleInProgress()
                 // Holed out on the last hole while quitting: the round is complete, so keep its best.
                 if (courseRun && physics.inCup && holeIndex == n - 1) {
-                    progress.recordCourse(course.name, scores.sum())
+                    progress.recordCourse(scores.sum())
                     progress.clearRun()
                 }
                 toTitle()
@@ -597,20 +716,21 @@ class GameView(
         }
     }
 
-    private fun nextHole() {
+    internal fun nextHole() {
         val next = holeIndex + 1
         if (courseRun && next >= n) {
             fadeTo {
-                courseNewBest = progress.recordCourse(course.name, scores.sum())
+                courseNewBest = progress.recordCourse(scores.sum())
                 progress.clearRun()
                 setMode(Mode.FINAL)
             }
         } else if (next < n) {
-            fadeTo { loadHole(next); setMode(Mode.PLAY) }
+            val go = { loadHole(next); setMode(Mode.PLAY) }
+            if (reduceMotion) fadeTo(go) else glideTo(true, go)
         } else toSelect()
     }
 
-    private fun updatePower() {
+    internal fun updatePower() {
         val len = hypot(downX - curX, downY - curY)
         power = if (len < cancelPx) 0f else ((len - cancelPx) / (maxDragPx - cancelPx)).coerceIn(0.02f, 1f)
         val step = floor(power * 10f + 1e-4f).toInt()
@@ -623,11 +743,14 @@ class GameView(
         }
     }
 
-    private fun shoot() {
+    internal fun shoot() {
         val dx = downX - curX
         val dy = downY - curY
         physics.shoot(dx, dy, power)
         strokes++
+        shotPower = power
+        shotX = physics.x; shotY = physics.y; shotLive = true
+        slowChecked = false
         sfx.strike(power, pan(physics.x))
         haptics.strike(this, power)
         // Grass clippings kicked up behind the ball.
@@ -641,11 +764,23 @@ class GameView(
                 0.35f + rnd.nextFloat() * 0.3f, if (rnd.nextBoolean()) Palette.FAIR_DOT else Palette.ROUGH_LIGHT)
         }
         ring(physics.x, physics.y, 0.25f, 5f, Palette.INK)
+        spriteFx.swoosh(physics.x, physics.y, ux, uy)
+    }
+
+    /** The aim and trail colour for a shot of [p] power: white, warming to gold, then hot. */
+    internal fun powerColour(p: Float) = if (p < 0.6f) Palette.lerp(Palette.INK, Palette.GOLD, p / 0.6f)
+        else Palette.lerp(Palette.GOLD, Palette.HOT, (p - 0.6f) / 0.4f)
+
+    /** Records how far the shot went, from where it was struck to where it ended. */
+    internal fun endShot(x: Float, y: Float) {
+        if (!shotLive) return
+        shotLive = false
+        progress.longestShot = hypot(x - shotX, y - shotY).roundToInt()
     }
 
     // ---------------------------------------------------------------- physics events
 
-    private fun pan(wx: Float) = if (lw == 0) 0f else (((wx - camX) / lw) * 2f - 1f).coerceIn(-1f, 1f) * 0.8f
+    internal fun pan(wx: Float) = if (lw == 0) 0f else (((wx - camX) / lw) * 2f - 1f).coerceIn(-1f, 1f) * 0.8f
 
     override fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) {
         sfx.wall(impact, pan(x), wood)
@@ -667,17 +802,9 @@ class GameView(
         }
     }
 
-    /** Whether the ball rests within a few tiles of a ramp (where the one-time ramp tip helps). */
-    private fun nearRamp(): Boolean {
-        if (!hole.hasRamps) return false
-        val tx = floor(physics.x / TILE).toInt()
-        val ty = floor(physics.y / TILE).toInt()
-        for (dy in -4..4) for (dx in -4..4) if (hole.tile(tx + dx, ty + dy).isRamp) return true
-        return false
-    }
-
     override fun onLaunch(x: Float, y: Float, speed: Float) {
-        progress.seenRampTip = true
+        progress.markTip("ramp")
+        progress.recordJump()
         sfx.launch(speed, pan(x))
         haptics.tap(this)
         repeat(6) {
@@ -695,6 +822,7 @@ class GameView(
             spawn(x, y, cos(a) * s, sin(a) * s * 0.5f, 0.35f, col)
         }
         ring(x, y, 0.3f, 4f, Palette.alpha(Palette.INK, 160))
+        if (!hole.at(x, y).water) spriteFx.dust(x, y, if (hole.at(x, y) == Tile.SAND) Palette.SAND_LIGHT else Palette.PAPER[3])
     }
 
     override fun onTeeter(x: Float, y: Float) {
@@ -706,6 +834,8 @@ class GameView(
 
     override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) {
         strokes++ // penalty
+        shotLive = false
+        spriteFx.splash(x, y)
         sfx.splash(pan(x))
         haptics.splash(this)
         if (!reduceMotion) shakeT = 0f
@@ -730,15 +860,21 @@ class GameView(
     }
 
     override fun onStop(x: Float, y: Float) {
+        endShot(x, y)
         if (hole.at(x, y) == Tile.ROUGH) repeat(4) {
             spawn(x, y + 1f, rnd.nextFloat() * 16f - 8f, -rnd.nextFloat() * 10f, 0.35f, Palette.ROUGH_LIGHT)
         }
+        if (!physics.inCup && hypot(x - hole.cupX, y - hole.cupY) < SO_CLOSE) say("SO CLOSE!", hole.cupX, hole.cupY - 12f, Palette.GOLD)
     }
 
     override fun onCup(x: Float, y: Float, speed: Float) {
         sinkT = 0f
+        endShot(hole.cupX, hole.cupY)
         val toParHole = strokes - hole.par
-        newBest = progress.record(holeIndex, strokes)
+        // An ace, eagle or better: gulls lift off the green and the camera punches in.
+        greatHole = strokes == 1 || toParHole <= -2
+        if (greatHole && !reduceMotion) { celebrateT = 0f; punchT = 0f }
+        newBest = progress.record(holeIndex, strokes, hole.par)
         if (courseRun) {
             scores[holeIndex] = strokes
             if (holeIndex + 1 < n) progress.saveRun(holeIndex + 1, scores)
@@ -757,46 +893,64 @@ class GameView(
 
     // ---------------------------------------------------------------- effects
 
-    private fun spawn(x: Float, y: Float, vx: Float, vy: Float, life: Float, col: Int) {
+    internal fun spawn(x: Float, y: Float, vx: Float, vy: Float, life: Float, col: Int) {
         val i = pNext; pNext = (pNext + 1) % pn
         pX[i] = x; pY[i] = y; pVX[i] = vx; pVY[i] = vy; pLife[i] = life; pMax[i] = life; pCol[i] = col
     }
 
-    private fun ring(x: Float, y: Float, dur: Float, radius: Float, col: Int) {
+    internal fun ring(x: Float, y: Float, dur: Float, radius: Float, col: Int) {
         val i = rNext; rNext = (rNext + 1) % rn
         rX[i] = x; rY[i] = y; rT[i] = 0f; rDur[i] = dur; rRad[i] = radius; rCol[i] = col
     }
 
     /** A message floating up from a point in the world. */
-    private fun say(text: String, x: Float, y: Float, col: Int) {
+    internal fun say(text: String, x: Float, y: Float, col: Int) {
         msg = text; msgX = x; msgY = y; msgT = 0f; msgCol = col; msgUi = false
     }
 
     /** A message in a strip just above the bottom sheet. */
-    private fun sayUi(text: String) {
+    internal fun sayUi(text: String) {
         msg = text; msgT = 0f; msgCol = Palette.INK; msgUi = true
     }
 
     // ---------------------------------------------------------------- update
 
-    private fun update(dt: Float) {
+    internal fun update(dt: Float) {
         time += dt
         modeT += dt
         sheetT += dt
         if (selT < 1f) selT = min(1f, selT + dt / 0.22f)
+        updateGlide(dt)
+        // The title's backdrop drifts from hole to hole.
+        if (mode == Mode.TITLE && sheet == Sheet.NONE && fadeT < 0f && glideT < 0f && !reduceMotion && modeT > titlePanAt) {
+            titlePanAt = modeT + TITLE_PAN_S
+            val k = (holeIndex + 1) % n
+            if (terrains[k].isDone) glideTo(false) { loadHole(k, backdrop = true) }
+        }
         if (fadeT >= 0f) {
             fadeT += dt
             if (!fadeDone && fadeT >= FADE) { fadeDone = true; fadeAction?.invoke(); fadeAction = null }
             if (fadeT >= 2 * FADE) fadeT = -1f
         }
         val live = mode == Mode.PLAY && sheet == Sheet.NONE
-        if (live && fadeT < 0f) holeT += dt
+        if (live && fadeT < 0f && glideT < 0f) holeT += dt
         if (flyover && holeT > 1.6f) flyover = false
+        tipKey?.let { k ->
+            tipShownT += dt
+            if (tipShownT > 4f || physics.moving) { progress.markTip(k); tipKey = null }
+        }
 
         // Hold still to peek at the green.
         if (aiming && isLong() && !aimMoved && !peeking && power <= 0f && time - aimStartT > PEEK_HOLD) {
             peeking = true
             haptics.tap(this)
+        }
+        // Practice: long-press the pause chip to restart the hole at once.
+        if (pressedId == B_PAUSE && !courseRun && mode == Mode.PLAY && time - pressStartT > RESTART_HOLD) {
+            pressedId = NONE
+            haptics.cup(this, false)
+            val i = holeIndex
+            fadeTo { loadHole(i); setMode(Mode.PLAY) }
         }
         // Long-press the logo to show frame times.
         if (logoDownT >= 0f && time - logoDownT > 1f) {
@@ -805,9 +959,19 @@ class GameView(
             haptics.tap(this)
         }
 
-        if (!physics.moving) fastForward = false
+        if (!physics.moving) { fastForward = false; slowMo = false }
+        // A shot about to make an ace or eagle plays its last stretch slowly. The physics runs
+        // exactly the same steps; only the clock slows.
+        if (live && physics.moving && !slowChecked && hypot(physics.x - hole.cupX, physics.y - hole.cupY) < SLOW_R) {
+            slowChecked = true
+            if (!reduceMotion && (strokes == 1 || strokes <= hole.par - 2)) {
+                scratch.copyFrom(physics)
+                scratch.settle()
+                slowMo = scratch.inCup
+            }
+        }
         if (live && physics.moving) {
-            val speedUp = if (fastForward) FAST_FORWARD else 1f
+            val speedUp = if (fastForward) FAST_FORWARD else if (slowMo) SLOW_MO else 1f
             acc += dt * speedUp
             var steps = 0
             while (acc >= Physics.STEP && steps < MAX_STEPS_PER_FRAME * speedUp) {
@@ -827,7 +991,20 @@ class GameView(
             sinkT += dt
             if (sinkT > SINK_S && mode == Mode.PLAY) setMode(Mode.CARD)
         }
-        if (mode == Mode.CARD) cardT += dt
+        if (mode == Mode.CARD) {
+            cardT += dt
+            // The result word lands like a rubber stamp.
+            if (!stamped && cardT >= STAMP_S) {
+                stamped = true
+                stampT = 0f
+                sfx.stamp()
+                haptics.wall(this, 180f)
+            }
+        }
+        if (stampT >= 0f) { stampT += dt; if (stampT > 1.2f) stampT = -1f }
+        if (celebrateT >= 0f) { celebrateT += dt; if (celebrateT > 2.6f) celebrateT = -1f }
+        if (punchT >= 0f) { punchT += dt; if (punchT > PUNCH_S) punchT = -1f }
+        spriteFx.update(dt)
         if (popT >= 0f) { popT += dt; if (popT > 0.5f) popT = -1f }
         if (teeterT >= 0f) { teeterT += dt; if (teeterT > 0.6f) teeterT = -1f }
         if (shakeT >= 0f) { shakeT += dt; if (shakeT > 0.12f) shakeT = -1f }
@@ -861,10 +1038,10 @@ class GameView(
         updateGestureExclusion()
     }
 
-    private val playTop get() = insetTop + HUD_H
-    private val playBottom get() = lh - insetBottom - 2
+    internal val playTop get() = insetTop + HUD_H
+    internal val playBottom get() = lh - insetBottom - 2
 
-    private fun updateCamera(dt: Float) {
+    internal fun updateCamera(dt: Float) {
         val playH = playBottom - playTop
         var focusX = physics.x
         var focusY = physics.y
@@ -879,6 +1056,7 @@ class GameView(
         val ty = if (hole.pxH <= playH) -(playTop + (playH - hole.pxH) / 2).toFloat()
         else (focusY - playTop - playH / 2f).coerceIn(-playTop.toFloat(), (hole.pxH - playBottom).toFloat())
         if (camSnap) { camX = tx; camY = ty; camSnap = false }
+        cameraMoving = abs(tx - camX) > 0.05f || abs(ty - camY) > 0.05f
         val k = 1f - exp(-(if (peeking) 6f else 3.6f) * dt)
         camX += (tx - camX) * k
         camY += (ty - camY) * k
@@ -891,22 +1069,42 @@ class GameView(
     override fun onDraw(canvas: Canvas) {
         val wb = world ?: return
         val ub = ui ?: return
+        if (!ready) {
+            // The first map is still being built off the main thread: a calm splash meanwhile.
+            if (terrains[0].isDone) {
+                loadHole(0)
+                ready = true
+                startupMs = SystemClock.uptimeMillis() - createdAt
+                android.util.Log.i("GolfAlone", "first frame after $startupMs ms")
+            } else {
+                canvas.drawColor(Palette.DEEP)
+                postInvalidateOnAnimation()
+                return
+            }
+        }
         val t0 = System.nanoTime()
         val now = SystemClock.uptimeMillis()
         val dtMs = if (lastMs == 0L) 0L else now - lastMs
         val dt = (dtMs / 1000f).coerceIn(0f, 0.1f)
         lastMs = now
-        if (dtMs > 0) { frameMs[frameNext] = dtMs.toFloat(); frameNext = (frameNext + 1) % frameMs.size }
+        // Only frames drawn back to back count towards smoothness; idle gaps are on purpose.
+        if (dtMs > 0 && lastWasActive) {
+            frameMs[frameNext] = dtMs.toFloat(); frameNext = (frameNext + 1) % frameMs.size
+            if (dtMs > worstFrameMs) worstFrameMs = dtMs.toFloat()
+        }
         update(dt)
 
-        val ix = floor(camX).toInt()
-        val iy = floor(camY).toInt()
+        val vx = camX + glideOffsetX
+        val vy = camY + glideOffset
+        val ix = floor(vx).toInt()
+        val iy = floor(vy).toInt()
         drawWorld(ix, iy)
-        drawUi()
+        if (uiNeedsRedraw()) drawUi()
 
         val shake = if (shakeT >= 0f) (if ((shakeT * 60f).toInt() % 2 == 0) scale else -scale) else 0
-        val sx = (offX - (camX - ix) * scale).roundToInt().toFloat() + shake
-        val sy = (offY - (camY - iy) * scale).roundToInt().toFloat()
+        val punch = if (punchT >= 0f) ((1f - punchT / PUNCH_S) * 3f).roundToInt() * scale else 0
+        val sx = (offX - (vx - ix) * scale).roundToInt().toFloat() + shake
+        val sy = (offY - (vy - iy) * scale).roundToInt().toFloat() + punch
         src.set(0, 0, wb.width, wb.height)
         dst.set(sx, sy, sx + wb.width * scale, sy + wb.height * scale)
         canvas.drawColor(Palette.DEEP)
@@ -914,10 +1112,39 @@ class GameView(
         src.set(0, 0, ub.width, ub.height)
         dst.set(offX, offY, offX + ub.width * scale, offY + ub.height * scale)
         canvas.drawBitmap(ub, src, dst, blit)
-        drawMs[drawNext] = (System.nanoTime() - t0) / 1e6f
+        val drawn = (System.nanoTime() - t0) / 1e6f
+        drawMs[drawNext] = drawn
         drawNext = (drawNext + 1) % drawMs.size
+        if (drawn > worstDrawMs) worstDrawMs = drawn
 
-        if (isAttachedToWindow && windowVisibility == VISIBLE) postInvalidateOnAnimation()
+        if (isAttachedToWindow && windowVisibility == VISIBLE) {
+            val wait = RedrawPolicy.intervalMs(redrawState())
+            lastWasActive = wait == 0L
+            if (wait == 0L) postInvalidateOnAnimation() else postInvalidateDelayed(wait)
+        }
+    }
+
+    internal var lastWasActive = true
+
+    /** What's moving right now, for [RedrawPolicy]. */
+    internal fun redrawState(): RedrawPolicy.State {
+        var effects = msg != null || popT >= 0f || shakeT >= 0f || teeterT >= 0f || peeking || celebrateT >= 0f ||
+            punchT >= 0f || spriteFx.active || ambient.busy(time)
+        if (!effects) for (i in 0 until pn) if (pLife[i] > 0f) { effects = true; break }
+        if (!effects) for (i in 0 until rn) if (rT[i] >= 0f) { effects = true; break }
+        return RedrawPolicy.State(
+            touching = aiming || pressedId != NONE || !swipeX.isNaN() || logoDownT >= 0f || tapAnywhere || tapOutside,
+            ballMoving = physics.moving,
+            transitioning = fadeT >= 0f || glideT >= 0f || sheetT < 0.35f || modeT < 0.7f || selT < 1f || flyover || sinkT >= 0f ||
+                (mode == Mode.CARD && cardT < 0.7f) || (mode == Mode.PLAY && strokes == 0 && holeT < 2.7f) || stampT >= 0f,
+            effects = effects,
+            cameraMoving = cameraMoving,
+        )
+    }
+
+    /** A redraw the moment a finger lands, even mid idle wait. */
+    internal fun wake() {
+        if (!lastWasActive) { lastWasActive = true; postInvalidateOnAnimation() }
     }
 
     override fun onWindowVisibilityChanged(visibility: Int) {
@@ -926,181 +1153,25 @@ class GameView(
         if (visibility == VISIBLE) postInvalidateOnAnimation()
     }
 
-    private fun drawWorld(ix: Int, iy: Int) {
-        val c = wc
-        val wf = ((time * WATER_FPS).toInt()) % Terrain.FRAMES
-        // The open sea beyond the map: the same water, tiled in world coordinates so it meets
-        // the map's own open water without a seam.
-        val sea = Terrain.sea[wf]
-        var sy = Math.floorDiv(iy, Terrain.SEA_H) * Terrain.SEA_H
-        while (sy < iy + lh + 1) {
-            var sx = Math.floorDiv(ix, Terrain.SEA_W) * Terrain.SEA_W
-            while (sx < ix + lw + 1) {
-                c.drawBitmap(sea, (sx - ix).toFloat(), (sy - iy).toFloat(), blit)
-                sx += Terrain.SEA_W
-            }
-            sy += Terrain.SEA_H
-        }
-        val gx = -ix.toFloat()
-        val gy = -iy.toFloat()
-        c.drawBitmap(terrain.ground, gx, gy, blit)
-        c.drawBitmap(terrain.water(wf), gx, gy, blit)
-
-        // Glints drifting downhill on slopes.
-        for (i in slopeTiles) {
-            val t = hole.tiles[i]
-            val tx = i % hole.w
-            val ty = i / hole.w
-            val h1 = Terrain.hash(tx, ty, 41)
-            if (h1 > 0.6f) continue
-            val ph = ((time * 0.9f + h1 * 7f) % 1f)
-            val along = (ph * TILE).toInt()
-            val across = (Terrain.hash(tx, ty, 42) * 6f).toInt() + 1
-            val lx = if (t.slopeX > 0) along else if (t.slopeX < 0) TILE - 1 - along else across
-            val ly = if (t.slopeY > 0) along else if (t.slopeY < 0) TILE - 1 - along else across
-            val a = (sin(ph * PI.toFloat()) * 200f).toInt()
-            px(c, tx * TILE + lx - ix, ty * TILE + ly - iy, Palette.alpha(Palette.SLOPE_GLINT, a))
-        }
-
-        // Tee markers.
-        val tx0 = hole.teeX.toInt() - ix
-        val ty0 = hole.teeY.toInt() - iy
-        for (s in intArrayOf(-7, 6)) {
-            rect(c, tx0 + s, ty0 - 1, 2, 2, Palette.INK)
-            rect(c, tx0 + s, ty0 + 1, 2, 1, Palette.shade(Palette.FAIR_B, 0.7f))
-        }
-
-        val cx = hole.cupX.roundToInt() - ix
-        val cy = hole.cupY.roundToInt() - iy
-        Sprites.cup(c, cx, cy)
-
-        // Palm shadows and trunks sit on the ground, under the ball.
-        val posts = hole.posts
-        var k = 0
-        while (k < posts.size) {
-            val bx = posts[k].roundToInt() - ix
-            val by = posts[k + 1].roundToInt() - iy
-            Sprites.palmShadow(c, bx, by, Sprites.palmSway(time, k))
-            Sprites.palmTrunk(c, bx, by)
-            k += 2
-        }
-
-        // Trail.
-        for (i in 0 until tn) {
-            val age = time - tAt[i]
-            if (age < 0f || age > 0.2f) continue
-            px(c, tX[i].roundToInt() - ix, tY[i].roundToInt() - iy, Palette.alpha(Palette.INK, (150 * (1f - age / 0.2f)).toInt()))
-        }
-
-        drawBall(c, ix, iy)
-        if (mode == Mode.PLAY && aiming && power > 0f) drawAim(c, ix, iy)
-
-        // Particles.
-        for (i in 0 until pn) if (pLife[i] > 0f) {
-            val f = pLife[i] / pMax[i]
-            px(c, pX[i].roundToInt() - ix, pY[i].roundToInt() - iy, Palette.alpha(pCol[i], if (f > 0.4f) 255 else (255 * f / 0.4f).toInt()))
-        }
-        for (i in 0 until rn) if (rT[i] >= 0f) {
-            val f = rT[i] / rDur[i]
-            Pix.ring(c, rX[i].roundToInt() - ix + 0.5f, rY[i].roundToInt() - iy + 0.5f, 1f + f * rRad[i], Palette.alpha(rCol[i], (220 * (1f - f)).toInt()))
-        }
-
-        // Canopies over the ball; the ball shows through as a ghost.
-        k = 0
-        var under = false
-        while (k < posts.size) {
-            val bx = posts[k].roundToInt() - ix
-            val by = posts[k + 1].roundToInt() - iy
-            Sprites.palmCanopy(c, bx, by, Sprites.palmSway(time, k))
-            if (sinkT < 0f && Sprites.underCanopy(physics.x, physics.y, posts[k], posts[k + 1])) under = true
-            k += 2
-        }
-        if (under) Sprites.ball(c, physics.x.roundToInt() - ix, physics.y.roundToInt() - iy, 0, ghost = true, lift = physics.z.roundToInt())
-
-        val near = hypot(physics.x - hole.cupX, physics.y - hole.cupY) < 24f && physics.moving
-        val lift = if (sinkT >= 0f) min(3, (sinkT * 20f).toInt()) else 0
-        Sprites.flag(c, cx, cy, ((time * (if (near) 12f else 4f)).toInt()) % 3, lift)
-
-        // Gull and its shadow.
-        if (gullT >= 0f) {
-            val sx = if (gullDir > 0) -20f + gullT * GULL_SPEED else lw + 20f - gullT * GULL_SPEED
-            val wx = (camX + sx).roundToInt() - ix
-            val wy = (gullY + sin(gullT * 1.3f) * 4f).roundToInt() - iy
-            val flap = ((gullT * 4f).toInt()) % 2 == 0
-            Sprites.gull(c, wx + 7, wy + 12, flap, Palette.alpha(Palette.INK_SHADOW, 60))
-            Sprites.gull(c, wx, wy, flap, Palette.INK)
-        }
-
-        // Cloud shadows drift over everything on the ground.
-        for (i in clouds.indices) {
-            val cw = clouds[i].width
-            val span = hole.pxW + cw * 2
-            val x = ((time * (3f + i) + i * 97f) % span) - cw
-            val y = (hole.pxH * (0.15f + 0.33f * i)) + sin(time * 0.05f + i) * 10f
-            c.drawBitmap(clouds[i], (x.roundToInt() - ix).toFloat(), (y.roundToInt() - iy).toFloat(), blit)
-        }
-
-        val m = msg
-        if (m != null && !msgUi) {
-            val rise = (msgT * 8f).toInt()
-            val a = if (msgT < 1f) 255 else (255 * (1f - (msgT - 1f) / 0.4f)).toInt()
-            PixelFont.drawCentered(c, m, msgX.roundToInt() - ix, msgY.roundToInt() - iy - rise,
-                Palette.alpha(msgCol, a), 1, Palette.alpha(Palette.INK_SHADOW, a), PixelFont.Face.BIG)
-        }
-    }
-
-    private fun drawBall(c: Canvas, ix: Int, iy: Int) {
-        var bx = physics.x
-        var by = physics.y
-        if (sinkT >= 0f) {
-            // Rolls to the centre, shrinks, gone.
-            if (sinkT > 0.28f) return
-            val k = min(1f, sinkT / 0.12f)
-            bx += (hole.cupX - bx) * k; by += (hole.cupY - by) * k
-            val x = bx.roundToInt() - ix
-            val y = by.roundToInt() - iy
-            if (sinkT < 0.16f) rect(c, x - 1, y - 1, 3, 3, Palette.BALL_SHADE) else px(c, x, y, Palette.BALL_SHADE)
-            return
-        }
-        if (popT in 0f..0.12f) return // blink on respawn
-        // A ball that just stopped on the water's edge wobbles before it settles.
-        val wobble = if (teeterT >= 0f && !reduceMotion) (if ((teeterT * 14f).toInt() % 2 == 0) 1 else -1) * (if (teeterT < 0.4f) 1 else 0) else 0
-        val x = bx.roundToInt() - ix + wobble
-        val y = by.roundToInt() - iy
-        val dir = if (physics.vx + physics.vy >= 0f) 1 else -1
-        Sprites.ball(c, x, y, ((rollDist / 2.5f).toInt() * dir) and 3, lift = physics.z.roundToInt())
-        // An idle ball breathes a faint ring so it's easy to find.
-        if (mode == Mode.PLAY && !physics.moving && !aiming && sheet == Sheet.NONE && !flyover) {
-            val ph = (time * 0.8f) % 1f
-            Pix.ring(c, x + 0.5f, y + 0.5f, 3f + ph * 6f, Palette.alpha(Palette.INK, (120 * (1f - ph)).toInt()))
-        }
-    }
-
-    private fun drawAim(c: Canvas, ix: Int, iy: Int) {
-        val len = max(1f, hypot(downX - curX, downY - curY))
-        val ux = (downX - curX) / len
-        val uy = (downY - curY) / len
-        val dots = 2 + (power * 11f).toInt()
-        val col = if (power < 0.6f) Palette.lerp(Palette.INK, Palette.GOLD, power / 0.6f)
-        else Palette.lerp(Palette.GOLD, Palette.HOT, (power - 0.6f) / 0.4f)
-        val full = power >= 1f
-        for (i in 0 until dots) {
-            val d = 5f + i * 4f
-            val wx = physics.x + ux * d
-            val wy = physics.y + uy * d
-            if (hole.at(wx, wy).solid) break
-            if (full && ((time * 8f).toInt() + i) % 2 == 0) continue
-            val x = wx.roundToInt() - ix
-            val y = wy.roundToInt() - iy
-            px(c, x, y + 1, Palette.alpha(Palette.INK_SHADOW, 110))
-            px(c, x, y, col)
-            if (i == dots - 1) { px(c, x + 1, y, col); px(c, x - 1, y, col); px(c, x, y - 1, col) }
-        }
-    }
-
     // ---------------------------------------------------------------- UI layer
 
-    private fun drawUi() {
+    /**
+     * The UI layer is redrawn (and re-uploaded) only when something it shows could have
+     * changed: input, a transition, an animated hint or message, or a change of state.
+     */
+    internal fun uiNeedsRedraw(): Boolean {
+        val key = (mode.ordinal.toLong() shl 56) xor (sheet.ordinal.toLong() shl 52) xor (strokes.toLong() shl 40) xor
+            (holeIndex.toLong() shl 32) xor (scores.sum().toLong() shl 16) xor (pressedId.toLong() and 0xffff) xor (bookTab.toLong() shl 48) xor
+            (if (physics.moving) 1L shl 60 else 0L) xor (if (sinkT >= 0f) 1L shl 61 else 0L)
+        val animating = redrawState().let { it.touching || it.transitioning || it.effects } || progress.debugOverlay ||
+            (mode == Mode.PLAY && playHintShowing()) || (mode == Mode.TITLE)
+        if (!animating && key == uiDrawnKey && uiVersion == uiDrawnVersion) return false
+        uiDrawnKey = key
+        uiDrawnVersion = uiVersion
+        return true
+    }
+
+    internal fun drawUi() {
         val c = uc
         c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
         btnCount = 0
@@ -1109,12 +1180,13 @@ class GameView(
             Mode.TITLE -> drawTitle(c)
             Mode.SELECT -> drawSelect(c)
             Mode.PLAY -> { drawHud(c); drawPlayUi(c) }
-            Mode.CARD -> { drawHud(c); drawCard(c) }
+            Mode.CARD -> { drawHud(c); if (glideT < 0f) drawCard(c) }
             Mode.FINAL -> drawFinal(c)
         }
         when (sheet) {
             Sheet.PAUSE -> drawPause(c)
             Sheet.SETTINGS -> drawSettings(c)
+            Sheet.BOOK -> drawBook(c)
             Sheet.NONE -> {}
         }
         val m = msg
@@ -1132,27 +1204,27 @@ class GameView(
     }
 
     // Text helpers: big face for words, small face for dense grids.
-    private fun bigText(c: Canvas, s: String, cx: Int, y: Int, col: Int, scale: Int = 1, shadow: Int = 0) =
+    internal fun bigText(c: Canvas, s: String, cx: Int, y: Int, col: Int, scale: Int = 1, shadow: Int = 0) =
         PixelFont.drawCentered(c, s, cx, y, col, scale, shadow, Face.BIG)
 
-    private fun smallText(c: Canvas, s: String, cx: Int, y: Int, col: Int) =
+    internal fun smallText(c: Canvas, s: String, cx: Int, y: Int, col: Int) =
         PixelFont.drawCentered(c, s, cx, y, col, 1, 0, Face.SMALL)
 
-    private fun addButton(id: Int, x: Int, y: Int, w: Int, h: Int, pad: Int = 2) {
+    internal fun addButton(id: Int, x: Int, y: Int, w: Int, h: Int, pad: Int = 2) {
         if (btnCount >= maxButtons) return
         btnIds[btnCount] = id
         btnHit[btnCount].set(x - pad, y - pad, x + w + pad, y + h + pad)
         btnCount++
     }
 
-    private fun isPressed(id: Int): Boolean {
+    internal fun isPressed(id: Int): Boolean {
         if (pressedId != id) return false
         for (i in 0 until btnCount) if (btnIds[i] == id) return btnHit[i].contains(pressX, pressY)
         return true
     }
 
     /** A driftwood plank (primary) or paper tab (secondary) with a label that must fit. */
-    private fun button(c: Canvas, id: Int, x: Int, y: Int, w: Int, h: Int, text: String, primary: Boolean, on: Boolean = true) {
+    internal fun button(c: Canvas, id: Int, x: Int, y: Int, w: Int, h: Int, text: String, primary: Boolean, on: Boolean = true) {
         addButton(id, x, y, w, h)
         val down = isPressed(id)
         val face = if (PixelFont.width(text, 1, Face.BIG) <= w - 8) Face.BIG else Face.SMALL
@@ -1170,7 +1242,7 @@ class GameView(
     }
 
     /** An icon-only button: a paper tab with a one-colour sprite on it. */
-    private fun iconButton(c: Canvas, id: Int, x: Int, y: Int, w: Int, h: Int, icon: com.theprobyte.golfalone.render.Sprite, enabled: Boolean = true) {
+    internal fun iconButton(c: Canvas, id: Int, x: Int, y: Int, w: Int, h: Int, icon: com.theprobyte.golfalone.render.Sprite, enabled: Boolean = true) {
         addButton(id, x, y, w, h)
         val down = isPressed(id)
         Pix.tab(c, x, y, w, h, down, enabled)
@@ -1179,7 +1251,7 @@ class GameView(
     }
 
     /** A bottom sheet of paper sliding up to height [h]; returns its top edge. */
-    private fun bottomSheet(c: Canvas, h: Int, t: Float): Int {
+    internal fun bottomSheet(c: Canvas, h: Int, t: Float): Int {
         val k = if (reduceMotion) 1f else easeOut(min(1f, t / 0.25f))
         val top = lh - h + ((1f - k) * h).toInt()
         Pix.paper(c, 0, top, lw, lh - top + 4)
@@ -1187,160 +1259,38 @@ class GameView(
         return top
     }
 
-    private fun easeOut(k: Float) = 1f - (1f - k) * (1f - k) * (1f - k)
+    internal fun easeOut(k: Float) = 1f - (1f - k) * (1f - k) * (1f - k)
 
-    private fun easeOutBack(k: Float): Float =
+    internal fun easeOutBack(k: Float): Float =
         if (reduceMotion) 1f else 1f + 2.2f * (k - 1f) * (k - 1f) * (k - 1f) + 1.2f * (k - 1f) * (k - 1f)
 
     /** Rows of buttons laid from the safe bottom upwards. */
-    private fun rowY(fromBottom: Int): Int {
+    internal fun rowY(fromBottom: Int): Int {
         var y = safeBottom
         for (i in 0..fromBottom) y -= if (i == 0) PRIMARY_H else SECONDARY_H + GAP
         return y
     }
 
-    private fun drawHud(c: Canvas) {
-        val y = insetTop + 3
-        rect(c, 0, 0, lw, y + 10, Palette.alpha(Palette.INK_SHADOW, 170))
-        rect(c, 0, y + 10, lw, 1, Palette.alpha(Palette.INK_SHADOW, 80))
-        val holeText = "HOLE ${holeIndex + 1}/$n"
-        PixelFont.draw(c, holeText, 4, y, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
-        PixelFont.draw(c, "PAR ${hole.par}", 4 + PixelFont.width(holeText, 1, Face.BIG) + 6, y, Palette.INK_DIM, 1, Palette.INK_SHADOW, Face.BIG)
-        val s = "SHOTS $strokes"
-        val sw = PixelFont.width(s, 1, Face.BIG)
-        PixelFont.draw(c, s, lw - 4 - sw, y, if (strokes > hole.par) Palette.HOT else Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
-        if (courseRun) {
-            val d = toPar()
-            val t = parText(d)
-            val tw = PixelFont.width(t, 1, Face.BIG) + 4
-            val tx = lw - 4 - sw - 5 - tw
-            rect(c, tx, y - 1, tw, 9, Palette.alpha(Palette.PANEL_EDGE, 220))
-            PixelFont.draw(c, t, tx + 2, y, if (d <= 0) Palette.GOLD else Palette.INK, 1, 0, Face.BIG)
-        }
-    }
+    // HUD strings, rebuilt only when the hole or the stroke count changes.
+    internal var hudHole = -1
+    internal var hudStrokes = -1
+    internal var hudHoleText = ""
+    internal var hudParText = ""
+    internal var hudShotsText = ""
 
-    private fun drawPlayUi(c: Canvas) {
-        // Hole banner while the round begins.
-        if (holeT < 2.6f && strokes == 0) {
-            val a = when {
-                holeT < 0.3f -> holeT / 0.3f
-                holeT > 2.1f -> 1f - (holeT - 2.1f) / 0.5f
-                else -> 1f
-            }.coerceIn(0f, 1f)
-            // Mid-screen, over fairway: greens sit up top and the tee at the bottom.
-            val y = (playTop + playBottom) / 2 - 18
-            val ai = (255 * a).toInt()
-            val sh = Palette.alpha(Palette.INK_SHADOW, ai)
-            rect(c, 0, y - 10, lw, 46, Palette.alpha(Palette.INK_SHADOW, (160 * a).toInt()))
-            PixelFont.drawCentered(c, "${course.name} * HOLE ${holeIndex + 1}", lw / 2, y - 5, Palette.alpha(Palette.INK_DIM, ai), 1, sh, Face.BIG)
-            PixelFont.drawCentered(c, hole.name, lw / 2, y + 8, Palette.alpha(Palette.INK, ai), 2, sh, Face.BIG)
-            PixelFont.drawCentered(c, "PAR ${hole.par}", lw / 2, y + 25, Palette.alpha(Palette.GOLD, ai), 1, sh, Face.BIG)
-        }
-
-        // Rubber band from where you touched to your finger.
-        if (aiming && !peeking) {
-            val ax = toLX(downX).roundToInt()
-            val ay = toLY(downY).roundToInt()
-            val fx = toLX(curX)
-            val fy = toLY(curY)
-            val d = hypot(fx - ax, fy - ay)
-            val cancel = power <= 0f
-            val col = if (cancel) Palette.INK_DIM else Palette.INK
-            var t = 3f
-            while (t < d - 2f) {
-                px(c, (ax + (fx - ax) * t / d).roundToInt(), (ay + (fy - ay) * t / d).roundToInt(), Palette.alpha(col, 120))
-                t += 3f
-            }
-            Pix.ring(c, ax + 0.5f, ay + 0.5f, 4f, Palette.alpha(col, 170))
-            rect(c, fx.roundToInt() - 1, fy.roundToInt() - 1, 3, 3, Palette.alpha(col, 210))
-            if (!cancel) {
-                val pct = "${(power * 100).roundToInt()}%"
-                PixelFont.draw(c, pct, ax + 7, ay - 3, if (power >= 1f) Palette.HOT else Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
-            }
-        }
-
-        // The pause chip: bottom corner on the thumb's side, above the Home-swipe zone.
-        if (sinkT < 0f) {
-            val cw = CHIP
-            val cx = if (progress.leftHanded) 6 else lw - 6 - cw
-            val cy = safeBottom - cw
-            addButton(B_PAUSE, cx, cy, cw, cw, pad = 3)
-            val down = isPressed(B_PAUSE)
-            Pix.chip(c, cx, cy, cw, cw, down)
-            Sprites.icon(c, Sprites.iconPause, cx + (cw - Sprites.iconPause.w) / 2, cy + (cw - Sprites.iconPause.h) / 2, Palette.INK)
-        }
-
-        // Hints along the bottom.
-        val hy = safeBottom - CHIP - 14
-        val pulse = (0.6f + 0.4f * sin(time * 3f)).coerceIn(0f, 1f)
-        val a = (255 * pulse).toInt()
-        val sh = Palette.alpha(Palette.INK_SHADOW, a)
-        when {
-            fastForward -> PixelFont.drawCentered(c, ">> FAST", lw / 2, hy, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
-            peeking -> PixelFont.drawCentered(c, "PEEKING AT THE GREEN", lw / 2, hy, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
-            flyover && holeT > 0.4f -> PixelFont.drawCentered(c, "TAP TO SKIP", lw / 2, hy, Palette.INK_DIM, 1, Palette.INK_SHADOW, Face.BIG)
-            progress.best(0) == 0 && holeIndex == 0 && strokes == 0 && !physics.moving && holeT > 1f -> {
-                val text = if (aiming) (if (power > 0f) "LET GO TO SHOOT" else "PULL BACK TO AIM") else "PULL BACK ANYWHERE TO AIM"
-                PixelFont.drawCentered(c, text, lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
-            }
-            !progress.seenRampTip && !aiming && !physics.moving && nearRamp() ->
-                PixelFont.drawCentered(c, "ROLL UP A RAMP FAST TO JUMP", lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
-            isLong() && strokes == 0 && !aiming && !physics.moving && holeT > 2.6f ->
-                PixelFont.drawCentered(c, "HOLD STILL TO PEEK", lw / 2, hy, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
-        }
-    }
-
-    private fun toggleLabel(on: Boolean) = if (on) "ON" else "OFF"
-
-    private fun drawTitle(c: Canvas) {
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 110))
-        val a = (255 * min(1f, modeT / 0.5f)).toInt()
-        val top = insetTop + 34
-        val bob = if (reduceMotion) 0 else (sin(time * 1.2f) * 1.5f).roundToInt()
-        val sh = Palette.alpha(Palette.INK_SHADOW, a)
-        PixelFont.drawCentered(c, "GOLF", lw / 2, top + bob, Palette.alpha(Palette.INK, a), 5, sh, Face.BIG)
-        PixelFont.drawCentered(c, "ALONE", lw / 2, top + 42 + bob, Palette.alpha(Palette.GOLD, a), 4, sh, Face.BIG)
-        Sprites.flagIcon(c, lw / 2 + 56, top + 20 + bob, Palette.FLAG, 14)
-        PixelFont.drawCentered(c, "A QUIET ISLAND COURSE", lw / 2, top + 76, Palette.alpha(Palette.INK, a), 1, sh, Face.BIG)
-
-        // The sheet: course line, the main button, and a row of secondary ones.
-        val h = safeBottom.let { lh - it } + PRIMARY_H + GAP + SECONDARY_H + 30
-        val st = bottomSheet(c, h, modeT)
-        val best = progress.courseBest(course.name)
-        val line = if (best == 0) "${course.name} * PAR ${course.par}" else "BEST $best (${parText(best - course.par)}) * PAR ${course.par}"
-        bigText(c, line, lw / 2, st + 9, Palette.PAPER_INK)
-        val pad = 8
-        val by = st + 22
-        val saved = hasSavedRound
-        button(c, B_PLAY, pad, by, lw - pad * 2, PRIMARY_H, if (saved) "CONTINUE HOLE ${progress.runHole + 1}" else "PLAY COURSE", true)
-        val ry = by + PRIMARY_H + GAP
-        if (saved) {
-            val gw = 30
-            val bw = (lw - pad * 2 - gw - GAP * 2) / 2
-            button(c, B_NEW, pad, ry, bw, SECONDARY_H, "NEW ROUND", false)
-            button(c, B_HOLES, pad + bw + GAP, ry, bw, SECONDARY_H, "PRACTISE", false)
-            iconButton(c, B_SETTINGS, lw - pad - gw, ry, gw, SECONDARY_H, Sprites.iconGear)
-        } else {
-            val bw = (lw - pad * 2 - GAP) / 2
-            button(c, B_HOLES, pad, ry, bw, SECONDARY_H, "PRACTISE", false)
-            button(c, B_SETTINGS, pad + bw + GAP, ry, bw, SECONDARY_H, "SETTINGS", false)
-        }
-    }
-
-    /** A hole's thumbnail sized to fit [maxW]×[maxH], cached per box size. */
-    private fun thumb(i: Int, maxW: Int, maxH: Int): Bitmap? {
-        val box = (maxW.toLong() shl 32) or maxH.toLong()
-        if (box != thumbBox) { thumbs.fill(null); thumbBox = box }
-        thumbs[i]?.let { return it }
-        val f = terrains[i]
-        if (!f.isDone) return null
-        val t = f.get()
-        val step = max(ceil(t.w / maxW.toFloat()).toInt(), ceil(t.h / maxH.toFloat()).toInt()).coerceAtLeast(1)
-        return t.thumbnail(step).also { thumbs[i] = it }
-    }
+    /** One-time tips: (key, text), shown once when the ball rests near the feature. */
+    internal val tips = listOf(
+        "ramp" to "ROLL UP A RAMP FAST TO JUMP",
+        "sand" to "SAND SLOWS THE BALL DOWN",
+        "slope" to "GREEN SLOPES PULL THE BALL",
+        "wood" to "DRIFTWOOD BOUNCES HARD",
+        "pond" to "PONDS ARE WATER HAZARDS",
+    )
+    internal var tipShownT = 0f
+    internal var tipKey: String? = null
 
     /** In hole select, the preview takes horizontal swipes from the edges too (Android allows 200 dp). */
-    private fun updateGestureExclusion() {
+    internal fun updateGestureExclusion() {
         if (Build.VERSION.SDK_INT < 29 || width == 0) return
         val want = mode == Mode.SELECT && sheet == Sheet.NONE
         if (want == excluding) return
@@ -1352,228 +1302,30 @@ class GameView(
         } else emptyList()
     }
 
-    private var excluding = false
+    internal var excluding = false
 
-    private fun drawSelect(c: Canvas) {
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 190))
-        PixelFont.drawCentered(c, course.name, lw / 2, insetTop + 6, Palette.INK, 1, Palette.INK_SHADOW, Face.BIG)
+    internal val postcardThumbs = arrayOfNulls<Bitmap>(n)
+    internal var postcardBox = 0L
 
-        val sheetH = lh - safeBottom + PRIMARY_H + GAP + SECONDARY_H + 34
-        val previewTop = insetTop + 20
-        val previewBottom = lh - sheetH - 14
-        val boxH = previewBottom - previewTop
-        // The selected hole slides in from the side it came from.
-        val k = if (reduceMotion) 1f else easeOut(selT)
-        val slide = ((1f - k) * lw * 0.6f * selDir).toInt()
-        val open = progress.unlocked(sel)
-        // The hole's map, at full size where it fits, in a paper frame sized to it.
-        val tb = thumb(sel, lw - 16, boxH - 8)
-        if (tb != null) {
-            val fw = tb.width + 8
-            val fh = tb.height + 8
-            val fx = (lw - fw) / 2 + slide
-            val fy = previewTop + (boxH - fh) / 2
-            Pix.paper(c, fx, fy, fw, fh, perforated = false)
-            c.drawBitmap(tb, (fx + 4).toFloat(), (fy + 4).toFloat(), if (open) blit else dim)
-            if (!open) {
-                val lk = Sprites.iconLock
-                Pix.chip(c, fx + fw / 2 - 9, fy + fh / 2 - 9, 18, 18, false)
-                Sprites.icon(c, lk, fx + fw / 2 - lk.w / 2, fy + fh / 2 - lk.h / 2, Palette.INK)
-            }
-        }
-        // Dots.
-        val dy = previewBottom + 5
-        for (i in 0 until n) {
-            val x = lw / 2 - n * 4 + i * 8 + 2
-            rect(c, x, dy, 4, 4, if (i == sel) Palette.GOLD else Palette.alpha(Palette.INK, 90))
-        }
+    internal val sliderX0 = IntArray(2)
+    internal val sliderX1 = IntArray(2)
 
-        val st = bottomSheet(c, sheetH, 1f)
-        val h = course.holes[sel]
-        PixelFont.drawCentered(c, "${sel + 1}. ${h.name}", lw / 2, st + 8, Palette.PAPER_INK, 1, 0, Face.BIG)
-        val best = progress.best(sel)
-        val info = if (!open) "PAR ${h.par} * LOCKED" else if (best == 0) "PAR ${h.par} * NOT PLAYED" else "PAR ${h.par} * BEST $best"
-        PixelFont.drawCentered(c, info, lw / 2, st + 19, Palette.PAPER_INK_DIM, 1, 0, Face.BIG)
-        if (best > 0) Sprites.flagIcon(c, lw - 20, st + 8, flagColour(best, h.par), 10)
-        val pad = 8
-        val aw = 30
-        val by = st + 32
-        iconButton(c, B_PREV_HOLE, pad, by, aw, PRIMARY_H, Sprites.iconLeft, sel > 0)
-        button(c, B_PLAY_HOLE, pad + aw + GAP, by, lw - pad * 2 - aw * 2 - GAP * 2, PRIMARY_H, if (open) "PLAY HOLE" else "LOCKED", open)
-        iconButton(c, B_NEXT_HOLE, lw - pad - aw, by, aw, PRIMARY_H, Sprites.iconRight, sel < n - 1)
-        button(c, B_BACK, pad, by + PRIMARY_H + GAP, lw - pad * 2, SECONDARY_H, "BACK", false)
+    // Overlay text, refreshed twice a second so the overlay doesn't measure itself.
+    internal var overlayAt = -1f
+    internal var overlay1 = ""
+    internal var overlay2 = ""
+    internal var overlay3 = ""
+
+    /** Android's own frame timings (from MainActivity's FrameMetrics listener), in ms. */
+    @Volatile internal var metricTotal = 0f
+    @Volatile internal var metricSync = 0f
+    @Volatile internal var metricGpu = -1f
+
+    fun onFrameMetrics(totalMs: Float, syncMs: Float, gpuMs: Float) {
+        metricTotal = totalMs; metricSync = syncMs; metricGpu = gpuMs
     }
 
-    private fun flagColour(strokes: Int, par: Int) = when {
-        strokes == 1 -> Palette.FLAG
-        strokes <= par -> Palette.GOLD
-        else -> Palette.PAPER[1]
-    }
-
-    private fun drawPause(c: Canvas) {
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 120))
-        val restartAllowed = !courseRun // a restart in a round would be a free mulligan
-        val rows = if (restartAllowed) 2 else 1
-        val h = lh - safeBottom + PRIMARY_H + rows * (SECONDARY_H + GAP) + 30
-        val st = bottomSheet(c, h, sheetT)
-        PixelFont.drawCentered(c, "PAUSED", lw / 2, st + 8, Palette.PAPER_INK, 2, 0, Face.BIG)
-        val pad = 8
-        var y = st + 26
-        val bw = (lw - pad * 2 - GAP) / 2
-        button(c, B_SETTINGS, pad, y, bw, SECONDARY_H, "SETTINGS", false)
-        button(c, B_QUIT, pad + bw + GAP, y, bw, SECONDARY_H, if (courseRun) "SAVE + QUIT" else "QUIT", false)
-        y += SECONDARY_H + GAP
-        if (restartAllowed) {
-            button(c, B_RESTART, pad, y, lw - pad * 2, SECONDARY_H, "RESTART HOLE", false)
-            y += SECONDARY_H + GAP
-        }
-        button(c, B_RESUME, pad, y, lw - pad * 2, PRIMARY_H, "RESUME", true)
-    }
-
-    private fun drawSettings(c: Canvas) {
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 140))
-        val h = lh - safeBottom + PRIMARY_H + 4 * (SECONDARY_H + GAP) + 30
-        val st = bottomSheet(c, h, sheetT)
-        PixelFont.drawCentered(c, "SETTINGS", lw / 2, st + 8, Palette.PAPER_INK, 2, 0, Face.BIG)
-        val pad = 8
-        var y = st + 26
-        fun toggle(id: Int, label: String, on: Boolean) {
-            button(c, id, pad, y, lw - pad * 2, SECONDARY_H, "$label: ${toggleLabel(on)}", false, on)
-            y += SECONDARY_H + GAP
-        }
-        toggle(B_SOUND, "SOUND", progress.sound)
-        toggle(B_BUZZ, "VIBRATION", progress.haptics)
-        toggle(B_LEFT, "LEFT-HANDED", progress.leftHanded)
-        toggle(B_MOTION, "REDUCE MOTION", progress.reduceMotion)
-        button(c, B_DONE, pad, y, lw - pad * 2, PRIMARY_H, "DONE", true)
-    }
-
-    private fun resultWord(strokes: Int, par: Int): String {
-        val d = strokes - par
-        return when {
-            strokes == 1 -> "HOLE IN ONE!"
-            d <= -3 -> "ALBATROSS!"
-            d == -2 -> "EAGLE!"
-            d == -1 -> "BIRDIE!"
-            d == 0 -> "PAR"
-            d == 1 -> "BOGEY"
-            d == 2 -> "DOUBLE BOGEY"
-            else -> "+$d"
-        }
-    }
-
-    private fun resultInk(strokes: Int, par: Int) = when {
-        strokes < par || strokes == 1 -> Palette.STAMP_RED
-        strokes == par -> Palette.PAPER_INK
-        else -> Palette.PAPER_INK_DIM
-    }
-
-    private fun drawCard(c: Canvas) {
-        val k = min(1f, cardT / 0.3f)
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, (90 * k).toInt()))
-        val stripH = if (courseRun) 32 + 14 else 0 // the round strip, plus room for the tap hint
-        val buttonsH = if (courseRun) PRIMARY_H else PRIMARY_H + GAP + SECONDARY_H
-        val h = lh - safeBottom + buttonsH + stripH + 76
-        val st = bottomSheet(c, h, cardT)
-
-        val word = resultWord(strokes, hole.par)
-        val ws = if (PixelFont.width(word, 2, Face.BIG) <= lw - 16) 2 else 1
-        val wy = st + 10 + ((1f - easeOutBack(min(1f, cardT / 0.35f))) * 6).toInt()
-        PixelFont.drawCentered(c, word, lw / 2, wy, resultInk(strokes, hole.par), ws, 0, Face.BIG)
-        Sprites.flagIcon(c, lw / 2 - 3, st + 28, flagColour(strokes, hole.par), 11)
-        bigText(c, "$strokes ${if (strokes == 1) "SHOT" else "SHOTS"} * PAR ${hole.par}", lw / 2, st + 44, Palette.PAPER_INK)
-        if (newBest) bigText(c, "NEW BEST!", lw / 2, st + 55, Palette.STAMP_RED)
-        else bigText(c, "BEST ${progress.best(holeIndex)}", lw / 2, st + 55, Palette.PAPER_INK_DIM)
-
-        var y = st + 68
-        if (courseRun) {
-            // The round so far.
-            val bw = 22
-            val sx = lw / 2 - (n * (bw + 2) - 2) / 2
-            for (i in 0 until n) {
-                val bx = sx + i * (bw + 2)
-                rect(c, bx, y, bw, 17, if (i == holeIndex) Palette.STAMP_RED else Palette.PAPER[1])
-                rect(c, bx + 1, y + 1, bw - 2, 15, Palette.PAPER[3])
-                smallText(c, "${i + 1}", bx + bw / 2, y + 2, Palette.PAPER_INK_DIM)
-                val s = scores[i]
-                val p = course.holes[i].par
-                smallText(c, if (s > 0) "$s" else "-", bx + bw / 2, y + 9, if (s in 1..p) Palette.STAMP_RED else Palette.PAPER_INK)
-            }
-            y += 22
-            bigText(c, "ROUND ${parText(toPar())}", lw / 2, y, if (toPar() <= 0) Palette.STAMP_RED else Palette.PAPER_INK)
-            y += 12
-        }
-        if (cardT < CARD_READY) return
-        val pad = 8
-        if (courseRun) {
-            val last = holeIndex == n - 1
-            button(c, B_NEXT, pad, safeBottom - PRIMARY_H, lw - pad * 2, PRIMARY_H, if (last) "SEE SCORECARD" else "NEXT HOLE", true)
-            bigText(c, "OR TAP ANYWHERE", lw / 2, safeBottom - PRIMARY_H - 11, Palette.PAPER_INK_DIM)
-        } else {
-            val bw = (lw - pad * 2 - GAP) / 2
-            val ry = safeBottom - PRIMARY_H - GAP - SECONDARY_H
-            button(c, B_RETRY, pad, ry, bw, SECONDARY_H, "RETRY", false)
-            button(c, B_SELECT, pad + bw + GAP, ry, bw, SECONDARY_H, "HOLES", false)
-            val last = holeIndex == n - 1
-            button(c, if (last) B_SELECT else B_NEXT, pad, safeBottom - PRIMARY_H, lw - pad * 2, PRIMARY_H, if (last) "BACK TO HOLES" else "NEXT HOLE", true)
-        }
-    }
-
-    private fun drawFinal(c: Canvas) {
-        rect(c, 0, 0, lw, lh, Palette.alpha(Palette.INK_SHADOW, 150))
-        val h = lh - safeBottom + PRIMARY_H + 160
-        val st = bottomSheet(c, h, modeT)
-        smallText(c, course.name, lw / 2, st + 7, Palette.PAPER_INK_DIM)
-        PixelFont.drawCentered(c, "SCORECARD", lw / 2, st + 15, Palette.PAPER_INK, 2, 0, Face.BIG)
-        val total = scores.sum()
-        val d = total - course.par
-
-        // Table: label column, six holes, total, on ruled paper.
-        val lx = 8
-        val cw = 20
-        val cx0 = 32
-        var ry = st + 38
-        Pix.ruled(c, 4, ry + 7, lw - 8, 30, 10)
-        fun row(label: String, cell: (Int) -> Pair<String, Int>, tot: Pair<String, Int>) {
-            PixelFont.draw(c, label, lx, ry, Palette.PAPER_INK_DIM, 1, 0, Face.SMALL)
-            for (i in 0 until n) {
-                val (t, cl) = cell(i)
-                smallText(c, t, cx0 + i * cw + cw / 2, ry, cl)
-            }
-            smallText(c, tot.first, cx0 + n * cw + 12, ry, tot.second)
-            ry += 10
-        }
-        row("HOLE", { i -> "${i + 1}" to Palette.PAPER_INK_DIM }, "TOT" to Palette.PAPER_INK_DIM)
-        row("PAR", { i -> "${course.holes[i].par}" to Palette.PAPER_INK }, "${course.par}" to Palette.PAPER_INK)
-        row("YOU", { i -> "${scores[i]}" to resultInk(scores[i], course.holes[i].par) }, "$total" to (if (d <= 0) Palette.STAMP_RED else Palette.PAPER_INK))
-        for (i in 0 until n) Sprites.flagIcon(c, cx0 + i * cw + cw / 2 - 2, ry, flagColour(scores[i], course.holes[i].par), 8)
-        ry += 16
-        PixelFont.drawCentered(c, "${parText(d)} * $total SHOTS", lw / 2, ry, if (d <= 0) Palette.STAMP_RED else Palette.PAPER_INK, 2, 0, Face.BIG)
-        ry += 20
-        val best = progress.courseBest(course.name)
-        if (courseNewBest) bigText(c, "NEW COURSE BEST!", lw / 2, ry, Palette.STAMP_RED)
-        else bigText(c, "COURSE BEST $best (${parText(best - course.par)})", lw / 2, ry, Palette.PAPER_INK_DIM)
-        if (modeT < 0.4f) return
-        val pad = 8
-        val bw = (lw - pad * 2 - GAP) / 3
-        button(c, B_MENU, pad, safeBottom - PRIMARY_H, bw, PRIMARY_H, "MENU", false)
-        button(c, B_AGAIN, pad + bw + GAP, safeBottom - PRIMARY_H, lw - pad * 2 - bw - GAP, PRIMARY_H, "PLAY AGAIN", true)
-    }
-
-    private fun drawFrameTimes(c: Canvas) {
-        fun stats(a: FloatArray): Pair<Float, Float>? {
-            val s = a.filter { it > 0f }.sorted()
-            if (s.isEmpty()) return null
-            return s[s.size / 2] to s[(s.size * 95 / 100).coerceAtMost(s.size - 1)]
-        }
-        val f = stats(frameMs) ?: return
-        val d = stats(drawMs) ?: return
-        val l1 = "FRAME ${"%.1f".format(f.first)}MS P95 ${"%.1f".format(f.second)}"
-        val l2 = "DRAW ${"%.1f".format(d.first)}MS P95 ${"%.1f".format(d.second)}"
-        rect(c, 0, insetTop + 14, max(PixelFont.width(l1), PixelFont.width(l2)) + 6, 16, Palette.alpha(Palette.INK_SHADOW, 200))
-        PixelFont.draw(c, l1, 3, insetTop + 16, Palette.GOLD)
-        PixelFont.draw(c, l2, 3, insetTop + 23, Palette.GOLD)
-    }
+    internal val sortTmp = FloatArray(120)
 
     // ---------------------------------------------------------------- tests
 
@@ -1585,7 +1337,11 @@ class GameView(
     internal val ballInCup get() = physics.inCup
     internal val strokesForTest get() = strokes
     internal val scoresForTest get() = scores.copyOf()
-    internal val busy get() = fadeT >= 0f || flyover
+    internal val busy get() = fadeT >= 0f || flyover || glideT >= 0f
+    internal val gliding get() = glideT >= 0f
+    internal val sheetForTest get() = sheet
+    internal val bookTabForTest get() = bookTab
+    internal val slowMotion get() = slowMo
     internal val fading get() = fadeT >= 0f
     internal val isPaused get() = sheet == Sheet.PAUSE
     internal val isPeeking get() = peeking
@@ -1620,6 +1376,10 @@ class GameView(
         const val GULL_SPEED = 26f
         const val FADE = 0.2f
         const val WATER_FPS = 6f
+        internal val TEE_MARKS = intArrayOf(-7, 6)
+        /** Full-power pull as a share of the screen width: short, normal, long. */
+        internal val DRAG_LENGTHS = floatArrayOf(0.30f, 0.38f, 0.48f)
+        internal val PULL_NAMES = arrayOf("SHORT", "NORMAL", "LONG")
         const val FAST_FORWARD = 3f
         /** How soon a hole card takes input. */
         const val CARD_READY = 0.25f
@@ -1657,5 +1417,26 @@ class GameView(
         const val B_PREV_HOLE = 21
         const val B_NEXT_HOLE = 22
         const val B_PLAY_HOLE = 23
+        const val B_VOL_FX = 24
+        const val B_VOL_SURF = 25
+        const val B_STATUS = 26
+        const val B_PULL = 27
+        const val B_BOOK = 28
+        const val B_TAB_STATS = 29
+        const val B_TAB_CARDS = 30
+        /** Each half of the glide between holes (s). */
+        const val GLIDE_S = 0.4f
+        /** The title's backdrop moves to the next hole this often (s). */
+        const val TITLE_PAN_S = 8f
+        /** A great shot slows down this close to the cup (px), to this share of real time. */
+        const val SLOW_R = 36f
+        const val SLOW_MO = 0.35f
+        const val PUNCH_S = 0.3f
+        /** The result word lands this long after the card opens (s). */
+        const val STAMP_S = 0.18f
+        /** A ball stopping this close to the cup (px) is a near miss. */
+        const val SO_CLOSE = 7f
+        /** Practice: holding the pause chip this long restarts the hole. */
+        const val RESTART_HOLD = 0.6f
     }
 }
