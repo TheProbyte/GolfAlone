@@ -5,9 +5,21 @@ to shoot, and play a quiet island course alone.
 
 ![Screenshots](docs/screenshots.png)
 
-**Status:** milestone M1 of [the plan](docs/PLAN.md), with one playable hole (Driftwood Cove 1, par 3).
+**Status:** Driftwood Cove, a full 6-hole course (par 21). See [the plan](docs/PLAN.md) and
+[the visuals, UI and course plan](docs/POLISH_AND_COURSE_PLAN.md).
 
 ## What's in
+- **Driftwood Cove, 6 holes:**
+  - **First Light:** rocks and a tide pool.
+  - **The Spit:** a narrow neck between two seas.
+  - **Driftwood:** a bowl ringed with bouncy logs, played with bank shots.
+  - **Tide Pools:** a long par 5 that scrolls, ending in an island green.
+  - **Palm Grove:** palm trunks to thread through.
+  - **The Saddle:** a ridge green with slopes falling away.
+- **Play modes:** play the full course, with a running score against par and a scorecard at the
+  end, or practise any hole you've unlocked.
+- **Menus:** a pause menu, pixel buttons that press, hole cards and a course scorecard with flags.
+- **The world:** cloud shadows, flowers, shells, swaying palms, a rolling ball and dissolve transitions.
 - **Drag and pull back from anywhere.** Your thumb never covers the ball.
   - Power climbs with the drag, with a haptic tick and a click at every 10%.
   - Aim dots warm from white to gold to orange, and blink at full power.
@@ -54,5 +66,6 @@ to an app store.
 - `game/ShotPlanner.kt`: a beam-search bot that proves each hole can be finished at par (`HoleCompletableTest`)
 - `render/Terrain.kt`: per-pixel ground and the animated water overlays
 - `render/PixelFont.kt`, `render/Palette.kt`: the 3×5 font and colours
-- `GameView.kt`: the game loop, rendering, input, effects, title and scorecard
+- `GameView.kt`: the game loop, rendering, input, effects and every screen
+- `render/Sprites.kt`, `render/Pix.kt`: ball, flag, palms, clouds, icons and pixel drawing helpers
 - `Sfx.kt`, `Haptics.kt`, `audio/`: sound and vibration

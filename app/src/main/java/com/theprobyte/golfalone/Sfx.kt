@@ -43,10 +43,23 @@ class Sfx(context: Context) {
         if (power > 0.3f) it.sweep(0.18f + 0.3f * power, pan, 160f + 160f * power, 2200f, 700f)
     }
 
-    fun wall(impact: Float, pan: Float) = play {
+    /** Stone gives a bright knock; driftwood and palm trunks a warmer, hollow one. */
+    fun wall(impact: Float, pan: Float, wood: Boolean) = play {
         val v = (impact / 260f).coerceIn(0.08f, 1f)
-        it.tok(380f + impact * 0.6f, v, pan)
+        if (wood) {
+            it.tok(230f + impact * 0.35f, v, pan)
+            it.tok(460f + impact * 0.5f, v * 0.35f, pan, delayMs = 8f)
+        } else {
+            it.tok(380f + impact * 0.6f, v, pan)
+            it.click(v * 0.6f, pan)
+        }
     }
+
+    /** The ball dropping back on the tee after a splash. */
+    fun pop(pan: Float) = play { it.tok(520f, 0.25f, pan) }
+
+    /** Moving between screens: a soft breath of air. */
+    fun whoosh() = play { it.sweep(0.12f, 0f, 380f, 500f, 1500f) }
 
     fun sand(pan: Float) = play {
         it.sweep(0.35f, pan, 260f, 1500f, 450f, q = 0.9f)

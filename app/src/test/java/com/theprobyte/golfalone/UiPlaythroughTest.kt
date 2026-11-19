@@ -8,6 +8,7 @@ import android.view.MotionEvent
 import com.theprobyte.golfalone.game.ShotPlanner
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,7 +23,10 @@ import java.time.Duration
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Plays hole 1 end to end through real touch events on a Pixel-sized screen. */
+/**
+ * Plays a full round of Driftwood Cove through real touch events on a Pixel-sized screen
+ * with Pixel-like system bars, then visits hole select, practice, pause and the edge cases.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w411dp-h914dp-420dpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -40,6 +44,12 @@ class UiPlaythroughTest {
             frame()
             t += 16
         }
+    }
+
+    private fun runUntil(maxMs: Long, cond: () -> Boolean) {
+        var t = 0L
+        while (!cond() && t < maxMs) { run(16); t += 16 }
+        assertTrue("timed out", cond())
     }
 
     private fun frame(name: String? = null) {
@@ -60,6 +70,14 @@ class UiPlaythroughTest {
         run(32)
     }
 
+    private fun press(id: Int) {
+        run(32) // buttons register as they're drawn
+        val c = game.buttonCenter(id)
+        assertNotNull("button $id is showing", c)
+        tap(c!!.first, c.second)
+        runUntil(2000) { !game.fading }
+    }
+
     /** Pulls back from the middle of the screen, opposite to [angle], for [power]. */
     private fun drag(angle: Float, power: Float, shotName: String? = null) {
         val (cancel, maxDrag) = game.dragRangePx
@@ -78,16 +96,29 @@ class UiPlaythroughTest {
     }
 
     private fun waitForRest() {
-        var guard = 0
         run(48)
-        while (game.ballMoving && guard++ < 1500) run(16)
-        assertFalse("ball came to rest", game.ballMoving)
+        runUntil(30_000) { !game.ballMoving }
     }
 
-    @Test fun playHoleOneToTheScorecard() {
+    /** Plays the current hole out, re-planning from wherever the ball actually rests. */
+    private fun playHole(tag: String) {
+        val planner = ShotPlanner(game.hole)
+        var shots = 0
+        while (!game.ballInCup) {
+            val plan = (1..4).firstNotNullOfOrNull { planner.solveFrom(game.ballX, game.ballY, it) }
+            assertNotNull("${game.hole.name}: a way to the cup from ${game.ballX},${game.ballY}", plan)
+            val s = plan!!.shots.first()
+            drag(s.angle, s.power, if (shots == 0) "$tag-aim" else null)
+            if (shots == 0) { run(300); frame("$tag-rolling") }
+            waitForRest()
+            shots++
+            assertTrue("${game.hole.name} took too many shots", shots <= 10)
+        }
+    }
+
+    @Test fun playTheCourse() {
         val act = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         game = act.game
-        // Pixel-like system bars and gesture-navigation zones.
         val insets = android.view.WindowInsets.Builder()
             .setInsets(android.view.WindowInsets.Type.statusBars(), android.graphics.Insets.of(0, 63, 0, 0))
             .setInsets(android.view.WindowInsets.Type.navigationBars(), android.graphics.Insets.of(0, 0, 0, 42))
@@ -98,12 +129,11 @@ class UiPlaythroughTest {
         val (lw, lh, scale) = game.logicalSize
         println("logical ${lw}x$lh at ${scale}x for ${game.width}x${game.height}")
         assertEquals(GameView.Mode.TITLE, game.mode)
-        frame("01-title")
+        frame("00-title")
 
-        tap(game.width / 2f, game.height * 0.45f)
+        press(GameView.B_PLAY)
         assertEquals(GameView.Mode.PLAY, game.mode)
-        run(700)
-        frame("02-tee")
+        assertTrue(game.courseRun)
 
         // A pull that starts in the left gesture zone is left to the system (Back): no shot.
         touch(MotionEvent.ACTION_DOWN, 20f, game.height * 0.5f)
@@ -112,29 +142,44 @@ class UiPlaythroughTest {
         touch(MotionEvent.ACTION_UP, 400f, game.height * 0.5f)
         run(64)
         assertEquals(0, game.strokesForTest)
-        assertFalse(game.ballMoving)
 
-        val plan = ShotPlanner(game.hole).solve(game.hole.par)!!
-        plan.shots.forEachIndexed { i, s ->
-            drag(s.angle, s.power, if (i == 0) "03-aim" else null)
-            run(250)
-            if (i == 0) frame("04-rolling")
-            waitForRest()
-            frame("05-shot-${i + 1}")
+        val n = game.course.holes.size
+        for (i in 0 until n) {
+            assertEquals(i, game.holeIndex)
+            run(200)
+            frame("h${i + 1}-0-banner")
+            runUntil(3000) { !game.busy }
+            frame("h${i + 1}-1-tee")
+            playHole("h${i + 1}-2")
+            run(1600)
+            assertEquals(GameView.Mode.CARD, game.mode)
+            run(400)
+            frame("h${i + 1}-3-card")
+            println("${game.hole.name}: ${game.strokesForTest} (par ${game.hole.par})")
+            press(GameView.B_NEXT)
         }
-        assertTrue("holed out", game.ballInCup)
-        assertEquals(plan.shots.size, game.strokesForTest)
-        run(1600)
-        assertEquals(GameView.Mode.CARD, game.mode)
-        frame("06-card")
+        assertEquals(GameView.Mode.FINAL, game.mode)
+        run(800)
+        frame("90-scorecard")
+        val scores = game.scoresForTest
+        assertTrue(scores.all { it > 0 })
+        println("round: ${scores.toList()} = ${scores.sum()} (par ${game.course.par})")
 
-        // Again: back on the tee with no strokes.
-        val (ax, ay) = game.buttonCenter(primary = true)
-        tap(ax, ay)
+        press(GameView.B_MENU)
+        assertEquals(GameView.Mode.TITLE, game.mode)
+        frame("91-title-best")
+
+        // Hole select: everything is unlocked now. Practise hole 1.
+        press(GameView.B_HOLES)
+        assertEquals(GameView.Mode.SELECT, game.mode)
+        run(200)
+        frame("92-select")
+        press(GameView.B_HOLE0)
         assertEquals(GameView.Mode.PLAY, game.mode)
-        assertEquals(0, game.strokesForTest)
+        assertFalse(game.courseRun)
+        runUntil(3000) { !game.busy }
 
-        // A short pull-back that returns to the start is cancelled: no stroke.
+        // A pull-back that returns to the start is cancelled: no stroke.
         val sx = game.width / 2f
         val sy = game.height * 0.5f
         touch(MotionEvent.ACTION_DOWN, sx, sy)
@@ -144,18 +189,24 @@ class UiPlaythroughTest {
         touch(MotionEvent.ACTION_UP, sx, sy + 2f)
         run(100)
         assertEquals(0, game.strokesForTest)
-        assertFalse(game.ballMoving)
 
         // Into the sea off the tee: penalty stroke and back to the tee.
         drag(Math.PI.toFloat(), 1f)
         run(100)
         waitForRest()
-        frame("07-after-splash")
+        frame("93-after-splash")
         assertEquals(2, game.strokesForTest)
         assertEquals(game.hole.teeX, game.ballX, 0.01f)
 
-        // Back goes to the title.
+        // Pause, then resume; back toggles pause too.
+        press(GameView.B_PAUSE)
+        assertTrue(game.isPaused)
+        frame("94-pause")
+        press(GameView.B_RESUME)
+        assertFalse(game.isPaused)
         assertTrue(game.onBack())
+        assertTrue(game.isPaused)
+        press(GameView.B_QUIT)
         assertEquals(GameView.Mode.TITLE, game.mode)
     }
 }

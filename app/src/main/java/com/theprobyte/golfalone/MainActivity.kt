@@ -29,6 +29,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        game.onHostPause()
         sfx.onPause()
         super.onPause()
     }

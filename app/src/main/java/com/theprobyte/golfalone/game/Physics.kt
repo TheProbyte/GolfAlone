@@ -11,7 +11,8 @@ import kotlin.math.sqrt
 
 /** Things the simulation reports so the game can play sounds, haptics and particles. */
 interface PhysicsEvents {
-    fun onWall(x: Float, y: Float, impact: Float) {}
+    /** [wood] is driftwood or a palm trunk rather than stone. */
+    fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) {}
     fun onSand(x: Float, y: Float, speed: Float) {}
     fun onSplash(x: Float, y: Float) {}
     fun onLipOut(x: Float, y: Float, speed: Float) {}
@@ -142,8 +143,19 @@ class Physics(val hole: Hole) {
         }
     }
 
+    private var impactWood = false
+
+    /** Reflects the normal part with restitution [e] and damps the tangential part a touch. */
+    private fun bounce(nx: Float, ny: Float, vn: Float, e: Float) {
+        val tx = vx - vn * nx
+        val ty = vy - vn * ny
+        vx = tx * WALL_GRIP - vn * e * nx
+        vy = ty * WALL_GRIP - vn * e * ny
+    }
+
     private fun collideWalls(ev: PhysicsEvents) {
         touchedWall = false
+        impactWood = false
         val r = BALL_R
         val tx0 = floor((x - r) / TILE).toInt()
         val tx1 = floor((x + r) / TILE).toInt()
@@ -173,15 +185,33 @@ class Physics(val hole: Hole) {
             touchedWall = true
             val vn = vx * nx + vy * ny
             if (vn < 0f) {
-                // Reflect the normal part with restitution, damp the tangential part a touch.
-                val tx = vx - vn * nx
-                val tyv = vy - vn * ny
-                vx = tx * WALL_GRIP - vn * WALL_E * nx
-                vy = tyv * WALL_GRIP - vn * WALL_E * ny
-                maxImpact = max(maxImpact, -vn)
+                bounce(nx, ny, vn, hole.tile(tx, ty).e)
+                if (-vn > maxImpact) { maxImpact = -vn; impactWood = hole.tile(tx, ty) == Tile.WOOD }
             }
         }
-        if (maxImpact > 6f) ev.onWall(x, y, maxImpact)
+        // Palm trunks: round posts.
+        val posts = hole.posts
+        var i = 0
+        while (i < posts.size) {
+            val dx = x - posts[i]
+            val dy = y - posts[i + 1]
+            i += 2
+            val rr = r + Hole.POST_R
+            val d2 = dx * dx + dy * dy
+            if (d2 >= rr * rr || d2 < 1e-6f) continue
+            val d = sqrt(d2)
+            val nx = dx / d
+            val ny = dy / d
+            x = posts[i - 2] + nx * rr
+            y = posts[i - 1] + ny * rr
+            touchedWall = true
+            val vn = vx * nx + vy * ny
+            if (vn < 0f) {
+                bounce(nx, ny, vn, POST_E)
+                if (-vn > maxImpact) { maxImpact = -vn; impactWood = true }
+            }
+        }
+        if (maxImpact > 6f) ev.onWall(x, y, maxImpact, impactWood)
     }
 
     /** Runs the current shot to rest (or the cup). Returns the number of steps taken. */
@@ -211,7 +241,7 @@ class Physics(val hole: Hole) {
         const val SLOPE_G = 70f
         const val FUNNEL_G = 260f
         const val STOP_SPEED = 3f
-        const val WALL_E = 0.62f
+        const val POST_E = 0.55f
         const val WALL_GRIP = 0.94f
         const val MAX_ROLL_S = 18f
 

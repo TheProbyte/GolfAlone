@@ -17,6 +17,19 @@ class Progress(context: Context) {
         return true
     }
 
+    /** Fewest total strokes for a full round of [course], or 0. */
+    fun courseBest(course: String): Int = prefs.getInt("course_$course", 0)
+
+    fun recordCourse(course: String, strokes: Int): Boolean {
+        val b = courseBest(course)
+        if (b != 0 && strokes >= b) return false
+        prefs.edit().putInt("course_$course", strokes).apply()
+        return true
+    }
+
+    /** Hole [index] can be practised once the hole before it has been finished. */
+    fun unlocked(index: Int): Boolean = index == 0 || best(index - 1) > 0
+
     var sound: Boolean
         get() = prefs.getBoolean("sound", true)
         set(v) = prefs.edit().putBoolean("sound", v).apply()

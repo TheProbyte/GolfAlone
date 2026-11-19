@@ -30,6 +30,24 @@ object Palette {
     const val STONE_DARK = 0xFF5E5E6A.toInt()
     const val STONE_DARKER = 0xFF45454F.toInt()
 
+    const val WOOD = 0xFFA0724A.toInt()
+    const val WOOD_LIGHT = 0xFFC99A68.toInt()
+    const val WOOD_DARK = 0xFF76512F.toInt()
+    const val WOOD_DARKER = 0xFF54391F.toInt()
+
+    const val PALM = 0xFF3E9A4E.toInt()
+    const val PALM_LIGHT = 0xFF6CC468.toInt()
+    const val PALM_DARK = 0xFF2A6E3A.toInt()
+    const val TRUNK = 0xFF9A7548.toInt()
+    const val TRUNK_DARK = 0xFF6E5131.toInt()
+
+    const val FLOWER_Y = 0xFFF5D76E.toInt()
+    const val FLOWER_P = 0xFFF29AC0.toInt()
+    const val FLOWER_W = 0xFFF4F1E6.toInt()
+    const val SHELL = 0xFFF6EEE2.toInt()
+    const val SHELL_PINK = 0xFFE3A99A.toInt()
+    const val PEBBLE = 0xFF9E978B.toInt()
+
     const val CUP = 0xFF1D2B22.toInt()
     const val CUP_LIP = 0xFFA6E8A0.toInt()
     const val POLE = 0xFFF2EBD9.toInt()

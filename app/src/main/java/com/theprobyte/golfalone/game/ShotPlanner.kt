@@ -46,10 +46,13 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
         return d + if (t == Tile.SAND) 4f else if (t == Tile.ROUGH) 1.5f else 0f
     }
 
-    /** The shortest plan found within [maxStrokes], or null. */
-    fun solve(maxStrokes: Int): Plan? {
+    /** The shortest plan from the tee found within [maxStrokes], or null. */
+    fun solve(maxStrokes: Int): Plan? = solveFrom(hole.teeX, hole.teeY, maxStrokes)
+
+    /** The shortest plan from a ball at rest at ([x], [y]). */
+    fun solveFrom(x: Float, y: Float, maxStrokes: Int): Plan? {
         val sim = Physics(hole)
-        var frontier = listOf(Node(hole.teeX, hole.teeY, emptyList(), score(hole.teeX, hole.teeY)))
+        var frontier = listOf(Node(x, y, emptyList(), score(x, y)))
         repeat(maxStrokes) {
             val next = HashMap<Long, Node>()
             for (n in frontier) for (a in 0 until angles) for (p in 1..powers) {

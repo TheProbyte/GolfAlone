@@ -34,7 +34,7 @@ class PhysicsTest {
         val p = Physics(room)
         var hits = 0
         p.shootAngle(PI.toFloat(), 0.6f) // left, into the wall
-        p.settle(object : PhysicsEvents { override fun onWall(x: Float, y: Float, impact: Float) { hits++ } })
+        p.settle(object : PhysicsEvents { override fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) { hits++ } })
         assertTrue("hit the wall", hits > 0)
         assertTrue("came back off it", p.x > room.teeX - TILE)
     }
@@ -91,6 +91,41 @@ class PhysicsTest {
         g.shoot(0f, -1f, 0f + 0.02f)
         g.settle()
         assertTrue(room.teeY - g.y < 12f) // still a gentle tap-in
+    }
+
+    @Test fun driftwoodBouncesHarderThanStone() {
+        fun rebound(wall: Char): Float {
+            val h = box(
+                "~~~~~~~~~~~~",
+                "~$wall.........~",
+                "~$wall.......TO~",
+                "~$wall.........~",
+                "~~~~~~~~~~~~",
+            )
+            val p = Physics(h)
+            var impact = 0f
+            p.shoot(-1f, 0f, 0.5f)
+            while (p.moving && p.vx < 0f) p.step()
+            return p.vx
+        }
+        val stone = rebound('#')
+        val wood = rebound('w')
+        println("rebound speed: stone $stone, driftwood $wood")
+        assertTrue(wood > stone * 1.25f)
+    }
+
+    @Test fun palmTrunksDeflectTheBall() {
+        val h = box(
+            ",,,,,,,,,,,,",
+            ",T....P....O",
+            ",,,,,,,,,,,,",
+        )
+        val p = Physics(h)
+        var hit = false
+        p.shoot(1f, 0f, 0.7f)
+        p.settle(object : PhysicsEvents { override fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) { hit = hit || wood } })
+        assertTrue("hit the trunk", hit)
+        assertTrue("stopped short of the cup", !p.inCup)
     }
 
     @Test fun plannerSolvesTheTestRoom() {

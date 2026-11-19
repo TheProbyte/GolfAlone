@@ -16,9 +16,12 @@ enum class Tile(
     val k: Float = 0f,
     val slopeX: Float = 0f,
     val slopeY: Float = 0f,
+    /** Bounciness when [solid]. */
+    val e: Float = 0.62f,
 ) {
     WATER(water = true),
     WALL(solid = true),
+    WOOD(solid = true, e = 0.9f),
     FAIRWAY(c = 40f, k = 1.2f),
     ROUGH(c = 115f, k = 2.3f),
     GREEN(c = 28f, k = 0.9f),
@@ -35,7 +38,8 @@ enum class Tile(
 /**
  * A hole parsed from an ASCII map:
  * `~` water, `#` stone, `.` fairway, `,` rough, `:` green, `s` sand,
- * `^ v < >` green sloping downhill that way, `T` tee (fairway), `O` cup (green).
+ * `^ v < >` green sloping downhill that way, `T` tee (fairway), `O` cup (green),
+ * `w` driftwood (bouncy), `P` a palm (a round trunk standing in the rough).
  */
 class Hole(val name: String, val par: Int, rows: List<String>) {
     val w: Int = rows.first().length
@@ -45,6 +49,8 @@ class Hole(val name: String, val par: Int, rows: List<String>) {
     val teeY: Float
     val cupX: Float
     val cupY: Float
+    /** Palm trunks: x, y pairs (px), each a post of radius [POST_R]. */
+    val posts: FloatArray
     val pxW get() = w * TILE
     val pxH get() = h * TILE
 
@@ -54,6 +60,7 @@ class Hole(val name: String, val par: Int, rows: List<String>) {
         }
         var tee: Pair<Int, Int>? = null
         var cup: Pair<Int, Int>? = null
+        val palms = ArrayList<Float>()
         tiles = Array(w * h) { i ->
             val x = i % w
             val y = i / w
@@ -64,6 +71,8 @@ class Hole(val name: String, val par: Int, rows: List<String>) {
                 ',' -> Tile.ROUGH
                 ':' -> Tile.GREEN
                 's' -> Tile.SAND
+                'w' -> Tile.WOOD
+                'P' -> { palms += (x + 0.5f) * TILE; palms += (y + 0.5f) * TILE; Tile.ROUGH }
                 '^' -> Tile.SLOPE_N
                 'v' -> Tile.SLOPE_S
                 '>' -> Tile.SLOPE_E
@@ -79,6 +88,11 @@ class Hole(val name: String, val par: Int, rows: List<String>) {
         teeY = (t.second + 0.5f) * TILE
         cupX = (c.first + 0.5f) * TILE
         cupY = (c.second + 0.5f) * TILE
+        posts = palms.toFloatArray()
+    }
+
+    companion object {
+        const val POST_R = 2.5f
     }
 
     /** Off the map is open sea. */
