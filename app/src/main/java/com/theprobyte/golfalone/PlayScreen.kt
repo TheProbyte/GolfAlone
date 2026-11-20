@@ -82,7 +82,9 @@ internal fun GameView.drawPlayUi(c: Canvas) {
         val sh = Palette.alpha(Palette.INK_SHADOW, ai)
         rect(c, 0, y - 10, lw, 46, Palette.alpha(Palette.INK_SHADOW, (160 * a).toInt()))
         PixelFont.drawCentered(c, "${course.name} * HOLE ${holeIndex + 1}", lw / 2, y - 5, Palette.alpha(Palette.INK_DIM, ai), 1, sh, Face.BIG)
-        PixelFont.drawCentered(c, hole.name, lw / 2, y + 8, Palette.alpha(Palette.INK, ai), 2, sh, Face.BIG)
+        // Big, unless the name is too long for the screen at that size.
+        val big = if (PixelFont.width(hole.name, 2, Face.BIG) <= lw - 12) 2 else 1
+        PixelFont.drawCentered(c, hole.name, lw / 2, y + 8 + (if (big == 1) 4 else 0), Palette.alpha(Palette.INK, ai), big, sh, Face.BIG)
         PixelFont.drawCentered(c, "PAR ${hole.par}", lw / 2, y + 25, Palette.alpha(Palette.GOLD, ai), 1, sh, Face.BIG)
     }
 

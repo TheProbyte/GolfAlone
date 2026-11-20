@@ -157,4 +157,18 @@ class NewRulesTest {
         val ends = (1..12).map { p -> Physics(h).also { it.shootAngle(north, p / 12f); it.settle() }.y }
         assertTrue("a blade sometimes blocks", ends.any { it > 9 * TILE })
     }
+
+    @Test fun gatesAndIceSurviveASave() {
+        val h = strip("~,......,~", "~###GG###~", "~,......,~", "~jjjjjjjj~", "~,..p...,~", "~,......,~")
+        val a = HoleState(h)
+        a.gates[0] = true
+        a.cracked[2] = true
+        a.thinOpen[5] = true
+        val b = HoleState(h)
+        b.decode(a.encode())
+        assertTrue(b.gates[0])
+        assertTrue(b.cracked[2])
+        assertTrue(b.thinOpen[5])
+        assertEquals(a.key(), b.key())
+    }
 }

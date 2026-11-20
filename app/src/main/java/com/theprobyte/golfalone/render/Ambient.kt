@@ -50,7 +50,7 @@ class Ambient {
         sheep = if (theme == "bluff") pick(t.grassSpots, 3, 21) else IntArray(0)
         crabs = if (theme in setOf("cove", "lagoon", "wreck", "marsh")) pick(t.beachSpots, 2, 11) else IntArray(0)
         flies = if (theme == "cove" || theme == "lagoon" || theme == "temple") pick(t.flowerSpots, 2, 12) else IntArray(0)
-        fish = pick(t.pondSpots, 2, 13)
+        fish = if (theme == "frost" || theme == "ember") IntArray(0) else pick(t.pondSpots, 2, 13)
         perch = pick(t.wallTopSpots, 1, 14).firstOrNull() ?: -1
         flewAt = -1f
         gone = false

@@ -235,7 +235,8 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                 if (!land[j] && !sea[j]) { sea[j] = true; q.add(j) }
             }
         }
-        for (i in 0 until w * h) pond[i] = !land[i] && !sea[i]
+        // Lava pools aren't ponds: no lily pads, reeds or fish.
+        for (i in 0 until w * h) pond[i] = !land[i] && !sea[i] && !lava[i]
         val toPond = distanceFrom { pond[it] }
         for (i in 0 until w * h) nearPond[i] = land[i] && toPond[i] < 5f
     }
@@ -683,7 +684,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                 val y = gy + (hash(gx, gy, 32) * 6).toInt()
                 if (x in 1 until w - 3 && y in 1 until h - 2) {
                     val i = y * w + x
-                    if (pond[i] && edge[i] >= 3f && hash(gx, gy, 33) < 0.4f && pond[i + 2] && pond[i + w + 2]) {
+                    if (hole.style != "frost" && pond[i] && edge[i] >= 3f && hash(gx, gy, 33) < 0.4f && pond[i + 2] && pond[i + w + 2]) {
                         px[i] = Palette.LEAF[3]; px[i + 1] = Palette.LEAF[3]
                         px[i + w] = Palette.LEAF[2]; px[i + w + 1] = Palette.LEAF[2]; px[i + w + 2] = Palette.LEAF[3]
                         if (hash(gx, gy, 34) < 0.3f) px[i + 1] = Palette.FLOWER_P
@@ -701,7 +702,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                 val y = gy + (hash(gx, gy, 42) * 3).toInt()
                 if (x in 0 until w && y in 4 until h) {
                     val i = y * w + x
-                    if (nearPond[i] && edge[i] < 2.5f && isPlain(i) && isPlain(i - 3 * w) && hash(gx, gy, 43) < 0.55f) {
+                    if (hole.style != "frost" && nearPond[i] && edge[i] < 2.5f && isPlain(i) && isPlain(i - 3 * w) && hash(gx, gy, 43) < 0.55f) {
                         for (k in 0..2) px[i - k * w] = if (k == 0) Palette.LEAF[1] else Palette.LEAF[2]
                         if (hash(gx, gy, 44) < 0.5f) px[i - 3 * w] = Palette.WOODS[1] // a cattail
                     }

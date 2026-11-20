@@ -366,8 +366,9 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
                 !nearOpenIce(px, py) && clearOfPosts(px, py)) return px to py
             k += 1f
         }
-        // A current carried it in (no dry ground along its path): back to where the shot was played.
-        if (hole.at(lastDryX, lastDryY).flows) return restX to restY
+        // A current carried it in (no dry ground along its path), or its last dry spot is over
+        // open ice: back to where the shot was played.
+        if (hole.at(lastDryX, lastDryY).flows || nearOpenIce(lastDryX, lastDryY)) return restX to restY
         return if (coast.isLand(lastDryX, lastDryY)) lastDryX to lastDryY else restX to restY
     }
 

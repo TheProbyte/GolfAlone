@@ -274,7 +274,7 @@ class UiPlaythroughTest {
         assertEquals(GameView.Mode.TITLE, game.mode)
 
         val plays = mapOf("marsh" to listOf(0, 3), "light" to listOf(1, 3), "lagoon" to listOf(1, 3), "wreck" to listOf(1, 2),
-            "ember" to listOf(3), "frost" to listOf(2), "temple" to listOf(0), "bluff" to listOf(1))
+            "ember" to listOf(3), "frost" to listOf(2), "temple" to listOf(0, 1), "bluff" to listOf(1, 2, 5))
         for ((id, holes) in plays) {
             while (game.courseForTest.id != id) { press(GameView.B_NEXT_COURSE); runUntil(3000) { !game.fading } }
             run(400)
