@@ -28,7 +28,7 @@
    with no rule changes. **Done:** dawn on Driftwood Cove, the idle throttle, ambient life, the
    glide between islands, tiered celebrations, the Book (stats and postcards), volume sliders and
    pull length. Pars stay parked until you've played.
-5. 🔶 **Nine more courses** ([COURSES_PLAN.md](COURSES_PLAN.md)); courses 2–5 are built: Saltmarsh Flats (the tide),
+5. 🔶 **Nine more courses** ([COURSES_PLAN.md](COURSES_PLAN.md)); courses 2–9 are built, the finale is next: Saltmarsh Flats (the tide),
    Lighthouse Point (buoys, crabs, night), Glass Lagoon, Wreck Bay, Ember Isle, Frostbound Fjord,
    Temple Cay, Windward Bluffs, and the Starfall Atoll finale on one connected island.
    Course select and per-stroke hole state come first.

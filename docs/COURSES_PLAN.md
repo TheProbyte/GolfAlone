@@ -1,13 +1,13 @@
 # Golf Alone: the next nine courses
 
-> **Status:** courses 2–5 are **built** (Saltmarsh Flats, Lighthouse Point, Glass Lagoon, Wreck
-> Bay), with course select, per-shot hole state, and their moods, life and sounds. Courses 6–10
-> are still a plan. Pars below are what was built (the bot's best without tricks, plus one).
+> **Status:** courses 2–9 are **built**: Saltmarsh Flats, Lighthouse Point, Glass Lagoon, Wreck
+> Bay, Ember Isle, Frostbound Fjord, Temple Cay and Windward Bluffs, each with course select,
+> per-shot hole state, and its own mood, life and sound. Only the finale (course 10) is still a
+> plan. Pars below are what was built (the bot's best without tricks, plus one).
 > Life as built: herons and frogs (Saltmarsh); fireflies, crickets and a foghorn (Lighthouse);
-> fish in the shallows and lapping water (Lagoon); rain, thunder and crabs (Wreck). The Book's
-> hole table follows the course chosen on the title; separate tabs per course are still to come.
-> **Decision:** no loft shot. Golf Alone stays a rolling, putting game. Every mechanic
-> below works on a ball that rolls (and hops off ramps or vents), never one you chip.
+> fish and lapping water (Lagoon); rain, thunder and crabs (Wreck); rising embers and a rumble
+> (Ember); falling snow, seals and wind (Frostbound); parrots, butterflies and birdsong (Temple);
+> sheep and gusts (Windward). The Book's hole table follows the course chosen on the title.
 
 ## The shape of it
 
@@ -150,12 +150,15 @@ Built, par 21. Barrels never come to rest in the cup, and sink in the sea.
 
 | # | Hole | Size | Par | Idea |
 |---|---|---|---|---|
-| 1 | Black Sand | S | 3 | Learn the vent: one pop over a thin lava seam. |
-| 2 | Glass Floor | M | 3 | An obsidian sheet in front of the green: a feather touch. |
-| 3 | Vent Hop | S | 2 | Two vents in a row across a lava channel. |
-| 4 | Caldera | M | 4 | The rim of a crater round a lava lake, with an island green. |
-| 5 | The Flow | L | 5 | Lava rivers, crossed by vents and an obsidian bridge. |
-| 6 | Summit | L | 4 | Ramps spiral up to a green at the peak. |
+| 1 | Black Sand | S | 3 | A lava seam across the island; a vent either side of the straight line. |
+| 2 | Glass Floor | M | 3 | Obsidian before the green, a low wall across it, lava behind: a feather touch. |
+| 3 | Vent Hop | S | 3 | A wide lava channel: vent to an islet of vents, and on across. |
+| 4 | Caldera | M | 3 | A crater rim round a lava lake; rim vents throw you to the island green. |
+| 5 | The Flow | L | 4 | Two lava rivers, crossed by vents and an obsidian bridge. |
+| 6 | Summit | L | 4 | Rings of rock round the peak: ramps over them, or walk round to their east gaps. |
+
+Built, par 20. A vent throws the ball forward at least a few tiles, so even a soft putt clears a
+seam; vents in a row chain. Lava never meets the sea (basalt seals it).
 
 ## Course 7: Frostbound Fjord (cold morning)
 
@@ -170,11 +173,14 @@ Built, par 21. Barrels never come to rest in the cup, and sink in the sea.
 | # | Hole | Size | Par | Idea |
 |---|---|---|---|---|
 | 1 | First Frost | S | 3 | One ice patch in front of the green. |
-| 2 | Snow Fort | M | 3 | Snowbank walls that catch an overhit ball. |
-| 3 | Thin Ice | S | 3 | A one-time bridge: cross it once and it's gone. |
-| 4 | The Glacier | L | 5 | A long tongue of ice with crevasses of open water. |
-| 5 | Seal Rocks | M | 4 | Ice floes between rocks. |
-| 6 | Northern Lights | L | 4 | The finale at dusk under the aurora: ice, thin ice and snow. |
+| 2 | Snow Fort | M | 3 | Snowbank walls round the green, open to the south-east. |
+| 3 | Thin Ice | S | 3 | A thin-ice bridge straight over, or the long way round the west shore. |
+| 4 | The Glacier | L | 4 | A winding tongue of ice with crevasses on the straight lines. |
+| 5 | Seal Rocks | M | 5 | Ice floes among rocks, joined by narrow necks. |
+| 6 | Northern Lights | L | 4 | Ice, thin ice and snow, all the way up. |
+
+Built, par 22. Ice rolls about 1.6× as far as fairway. Every thin-ice hole has a second way
+round, and a fuzz test checks thin ice can never strand the ball.
 
 ## Course 8: Temple Cay (jungle, golden light)
 
@@ -188,12 +194,15 @@ Built, par 21. Barrels never come to rest in the cup, and sink in the sea.
 
 | # | Hole | Size | Par | Idea |
 |---|---|---|---|---|
-| 1 | Gatekeeper | S | 3 | A plate by the tee opens the gate to the green. |
-| 2 | Two Mouths | M | 3 | A tunnel shortcut, if you hit the mouth. |
-| 3 | The Courtyard | M | 4 | Four plates and one gate: which one opens it? |
-| 4 | Serpent Steps | L | 5 | Terraces joined by ramps and tunnels. |
-| 5 | The Idol | S | 2 | A tiny shrine with the cup at the idol's feet. |
-| 6 | Lost City | L | 5 | The big one: gates, tunnels and vines. |
+| 1 | Gatekeeper | S | 3 | A wall shields the green; the plate off to one side opens its gate. |
+| 2 | Two Mouths | M | 3 | A wall right across: a tunnel through it, or round its end through vines. |
+| 3 | The Courtyard | M | 4 | A walled court and four plates: only the one with the sun opens the gate. |
+| 4 | Serpent Steps | L | 5 | Terrace walls up the hill, crossed by ramps and a tunnel. |
+| 5 | The Idol | S | 2 | A tiny shrine, the cup at the feet of the idol. |
+| 6 | Lost City | L | 4 | Two walls, each with a gate and a tunnel. |
+
+Built, par 21. Gates are sandstone carved with their group's glyph (sun or moon); their plate
+carries the same glyph; decoys are plain stone.
 
 ## Course 9: Windward Bluffs (breezy noon, high cliffs)
 
@@ -210,11 +219,14 @@ Built, par 21. Barrels never come to rest in the cup, and sink in the sea.
 | # | Hole | Size | Par | Idea |
 |---|---|---|---|---|
 | 1 | Step Down | S | 3 | One ledge down to the green. |
-| 2 | The Mill | M | 3 | The classic: through the windmill. |
-| 3 | Ridge Line | M | 4 | A narrow ridge with the wind across it. |
-| 4 | Terraces | L | 5 | Five terraces stepping down to the sea. |
-| 5 | Sheepfold | S | 3 | Drystone walls and a gate. |
-| 6 | Gale | L | 4 | Windmills, ridge wind and ledges together. |
+| 2 | The Mill | M | 3 | Through the gap in the wall while the windmill turns. |
+| 3 | Ridge Line | M | 3 | A narrow ridge with the wind across it, the sea either side. |
+| 4 | Terraces | L | 4 | Four ledges stepping down to the green. |
+| 5 | Sheepfold | S | 4 | A drystone fold round the green, its gate to the side. |
+| 6 | Gale | L | 4 | A ledge, a windswept ridge, then a windmill in front of the green. |
+
+Built, par 21. Ledges are drawn the same whichever way they drop, with a chevron pointing down,
+so a one-way step always reads.
 
 ## Course 10: Starfall Atoll (finale, night under the stars, 9 holes)
 
