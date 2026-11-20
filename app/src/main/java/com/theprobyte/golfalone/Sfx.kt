@@ -130,6 +130,19 @@ class Sfx(context: Context) {
                 else for (k in 0 until 3) it.glass(Synth.midiToHz(98f + roll * 4f), 0.06f * v, pan, delayMs = k * 70f)
             }
             "lagoon" -> play { it.sweep(0.12f * v, pan, 900f, 400f, 700f, q = 0.6f) }
+            "ember" -> play {
+                it.sweep(0.22f * v, 0f, 2400f, 70f, 45f, q = 0.8f) // the mountain's rumble
+                if (roll < 0.3f) it.sweep(0.08f * v, pan, 400f, 5000f, 3500f, q = 0.6f)
+            }
+            "frost" -> play {
+                it.sweep(0.14f * v, pan, 2200f, 500f, 900f, q = 0.5f) // wind over the ice
+                if (roll < 0.3f) it.glass(Synth.midiToHz(100f), 0.08f * v, pan, delayMs = 400f)
+            }
+            "temple" -> play {
+                val n = 88f + roll * 8f
+                for (k in 0 until 2 + (roll * 3).toInt()) it.glass(Synth.midiToHz(n + (k % 2) * 3f), 0.1f * v, pan, delayMs = k * 90f)
+            }
+            "bluff" -> play { it.sweep(0.2f * v, pan, 1800f, 300f, 700f, q = 0.5f) }
             "wreck" -> play {
                 it.sweep(0.16f * v, pan, 2400f, 3000f, 2000f, q = 0.5f)
                 if (roll < 0.12f) it.sweep(0.3f * v, 0f, 2600f, 90f, 40f, q = 0.7f, delayMs = 300f) // thunder
@@ -170,6 +183,36 @@ class Sfx(context: Context) {
         val v = (impact / 250f).coerceIn(0.12f, 1f)
         it.tok(110f + impact * 0.15f, v, pan)
         it.tok(220f, v * 0.3f, pan, delayMs = 12f)
+    }
+
+    /** A steam vent: a hiss of noise and a soft pop. */
+    fun hiss(pan: Float) = play {
+        it.sweep(0.35f, pan, 420f, 5200f, 3000f, q = 0.6f)
+        it.tok(160f, 0.3f, pan)
+    }
+
+    /** A gate grinding open (or a decoy plate's click). */
+    fun gate(opened: Boolean, pan: Float) = play {
+        it.click(0.6f, pan)
+        if (opened) { it.sweep(0.45f, 0f, 900f, 120f, 70f, q = 0.8f); it.tok(70f, 0.5f, 0f, delayMs = 600f) }
+    }
+
+    /** Thin ice cracking: a bright ping. */
+    fun icePing(pan: Float) = play {
+        it.glass(Synth.midiToHz(93f), 0.35f, pan)
+        it.click(0.4f, pan)
+    }
+
+    /** Through a tunnel: a hollow whoomp in, and out. */
+    fun tunnel(pan: Float) = play {
+        it.tok(90f, 0.6f, pan)
+        it.sweep(0.25f, pan, 300f, 300f, 900f, q = 1.4f, delayMs = 120f)
+    }
+
+    /** Into the lava: a sizzle. */
+    fun sizzle(pan: Float) = play {
+        it.sweep(0.5f, pan, 700f, 6000f, 2500f, q = 0.5f)
+        it.tok(80f, 0.4f, pan)
     }
 
     /** A crab's scuttle. */

@@ -7,6 +7,7 @@ import com.theprobyte.golfalone.game.Hole
 import com.theprobyte.golfalone.game.HoleState
 import com.theprobyte.golfalone.game.TILE
 import com.theprobyte.golfalone.game.Tile
+import com.theprobyte.golfalone.game.Windmill
 import com.theprobyte.golfalone.render.Pix.px
 import com.theprobyte.golfalone.render.Pix.rect
 import kotlin.math.cos
@@ -50,6 +51,92 @@ object Bodies {
                 val col = Palette.alpha(Palette.SEA[5], 210)
                 px(c, x, y, col)
                 px(c, x - t.flowX.toInt(), y - t.flowY.toInt(), Palette.alpha(Palette.SEA[5], 120))
+            }
+        }
+
+        // Wind on the ridges: quick pale streaks the way it blows.
+        if (hole.windDeg != null) for (i in hole.tilesOf(Tile.RIDGE)) {
+            val tx = i % hole.w
+            val ty = i / hole.w
+            if (Terrain.hash(tx, ty, 86) > 0.45f) continue
+            val ph = ((time * 1.6f + Terrain.hash(tx, ty, 87)) % 1f)
+            val x = (tx * TILE + 4 + hole.windX * (ph * 12f - 6f)).roundToInt() - ix
+            val y = (ty * TILE + 4 + hole.windY * (ph * 12f - 6f)).roundToInt() - iy
+            val col = Palette.alpha(Palette.PAPER[3], (170 * kotlin.math.sin(ph * Math.PI.toFloat())).toInt())
+            px(c, x, y, col)
+            px(c, x - hole.windX.roundToInt(), y - hole.windY.roundToInt(), col)
+            px(c, x - 2 * hole.windX.roundToInt(), y - 2 * hole.windY.roundToInt(), Palette.alpha(Palette.PAPER[3], 60))
+        }
+        // Vents breathe steam.
+        for (i in hole.tilesOf(Tile.VENT)) {
+            val x = (i % hole.w) * TILE + 4 - ix
+            val y = (i / hole.w) * TILE + 4 - iy
+            for (s in 0 until 3) {
+                val ph = ((time * 0.8f + s / 3f + Terrain.hash(i, s, 88)) % 1f)
+                val sx = x + (kotlin.math.sin(ph * 6f + s) * 1.5f).roundToInt()
+                val sy = y - (ph * 9f).roundToInt()
+                px(c, sx, sy, Palette.alpha(Palette.PAPER[3], (150 * (1f - ph)).toInt()))
+            }
+        }
+        // Plates: a glyph for their gates, lit once pressed (a decoy has none).
+        for (i in hole.tilesOf(Tile.PLATE)) {
+            val g = hole.plateOf[i]
+            val x = (i % hole.w) * TILE - ix
+            val y = (i / hole.w) * TILE - iy
+            if (g < 0) { px(c, x + 3, y + 3, Palette.STONES[1]); px(c, x + 4, y + 4, Palette.STONES[1]); continue }
+            glyph(c, x + 2, y + 2, g, st.gates[g])
+        }
+        // Gates: a carved stone slab while shut; rubble once open.
+        for (i in hole.tilesOf(Tile.GATE)) {
+            val g = hole.plateOf[i]
+            val tx = i % hole.w
+            val ty = i / hole.w
+            val x = tx * TILE - ix
+            val y = ty * TILE - iy
+            if (st.gates[g]) {
+                px(c, x + 1, y + 6, Palette.STONES[1]); px(c, x + 5, y + 2, Palette.STONES[1]); px(c, x + 6, y + 5, Palette.STONES[3])
+                continue
+            }
+            rect(c, x + 1, y + 6, TILE, 2, shadow)
+            rect(c, x, y, TILE, 5, Palette.STONES[3])
+            rect(c, x, y + 5, TILE, 3, Palette.STONES[1])
+            rect(c, x, y, TILE, 1, Palette.STONES[4])
+            if (hole.plateAt(tx, ty - 1) != g || hole.tile(tx, ty - 1) != Tile.GATE) glyph(c, x + 2, y + 1, g, false)
+        }
+        // Tunnels: a dark pit for the mouth, an arch where it comes out.
+        for (i in hole.tilesOf(Tile.TUNNEL_IN)) {
+            val x = (i % hole.w) * TILE - ix
+            val y = (i / hole.w) * TILE - iy
+            Pix.oval(c, x + 4f, y + 4f, 3.5f, 3f, Palette.STONES[3])
+            Pix.oval(c, x + 4f, y + 4.5f, 2.5f, 2f, 0xFF0E0A12.toInt())
+        }
+        for (k in 0..1) {
+            if (hole.exitX[k] == 0f) continue
+            val x = (hole.exitX[k] - 4f).roundToInt() - ix - (hole.exitDX[k] * 4f).roundToInt()
+            val y = (hole.exitY[k] - 4f).roundToInt() - iy - (hole.exitDY[k] * 4f).roundToInt()
+            Pix.oval(c, x + 4f, y + 4f, 3.5f, 3.5f, Palette.STONES[3])
+            Pix.oval(c, x + 4f, y + 4.5f, 2.5f, 2.5f, 0xFF0E0A12.toInt())
+        }
+        // Thin ice: hairline cracks once it's been crossed; open water once it's gone.
+        if (hole.thinCount > 0) for (i in hole.tilesOf(Tile.THIN_ICE)) {
+            val k = hole.thinOf[i]
+            val tx = i % hole.w
+            val ty = i / hole.w
+            val x = tx * TILE - ix
+            val y = ty * TILE - iy
+            if (st.thinOpen[k]) {
+                rect(c, x, y, TILE, TILE, Palette.SEA[2])
+                for (u in 0 until TILE) {
+                    if (Terrain.hash(tx * 8 + u, ty, 89) < 0.5f && !st.thinOpenAt(tx, ty - 1)) px(c, x + u, y, Palette.PAPER[3])
+                    if (Terrain.hash(tx, ty * 8 + u, 90) < 0.5f && !st.thinOpenAt(tx - 1, ty)) px(c, x, y + u, Palette.PAPER[3])
+                }
+                px(c, x + 3, y + 4, Palette.SEA[4]); px(c, x + 5, y + 2, Palette.SEA[4])
+            } else if (st.cracked[k]) {
+                val col = Palette.PAPER[3]
+                var cx = x + 1
+                var cy = y + 3
+                for (s in 0 until 7) { px(c, cx, cy, col); cx++; cy += if (Terrain.hash(tx * 7 + s, ty, 91) < 0.5f) 1 else -1; cy = cy.coerceIn(y, y + TILE - 1) }
+                px(c, x + 4, y + 1, col); px(c, x + 4, y + 2, col)
             }
         }
 
@@ -171,6 +258,43 @@ object Bodies {
         // A stave line that turns while it rolls.
         val a = if (spin != 0f) time * 8f else 0.6f
         px(c, x + (cos(a) * 1.5f).roundToInt(), y + (sin(a) * 1.5f).roundToInt(), Palette.WOODS[4])
+    }
+
+    /** A gate group's glyph: a sun for 'G' (gold), a moon for 'J' (blue); bright when [lit]. */
+    private fun glyph(c: Canvas, x: Int, y: Int, g: Int, lit: Boolean) {
+        val col = if (g == 0) (if (lit) Palette.GOLD else Palette.SANDS[1]) else (if (lit) Palette.SEA[5] else Palette.SEA[2])
+        if (g == 0) {
+            rect(c, x + 1, y + 1, 2, 2, col); px(c, x + 2, y, col); px(c, x + 2, y + 3, col); px(c, x, y + 2, col); px(c, x + 3, y + 1, col)
+        } else {
+            rect(c, x + 1, y, 2, 1, col); px(c, x, y + 1, col); px(c, x, y + 2, col); rect(c, x + 1, y + 3, 2, 1, col)
+        }
+    }
+
+    /** Windmills over everything: a white tower on the hub, and blades at the angle the physics uses. */
+    fun windmills(c: Canvas, hole: Hole, ix: Int, iy: Int, shotTime: Float) {
+        for (m in hole.windmills) {
+            val hx = m.hubX.roundToInt() - ix
+            val hy = m.hubY.roundToInt() - iy
+            Pix.oval(c, hx + 2f, hy + 3f, 5f, 2.5f, shadow)
+            rect(c, hx - 3, hy - 4, 7, 7, Palette.PAPER[3])
+            rect(c, hx + 2, hy - 4, 2, 7, Palette.PAPER[1])
+            rect(c, hx - 4, hy - 6, 9, 2, Palette.FLAG_DARK)
+            val a0 = m.angle(shotTime)
+            for (k in 0 until m.blades) {
+                val a = a0 + k * (2f * Math.PI.toFloat() / m.blades)
+                val ca = cos(a)
+                val sa = sin(a)
+                var s = 2f
+                while (s <= m.length) {
+                    val x = (hx + ca * s).roundToInt()
+                    val y = (hy + sa * s).roundToInt()
+                    px(c, x, y, Palette.WOODS[1])
+                    if (s > 4f) px(c, (x - sa * 1.2f).roundToInt(), (y + ca * 1.2f).roundToInt(), Palette.PAPER[2]) // the sail
+                    s += 0.7f
+                }
+            }
+            rect(c, hx - 1, hy - 1, 3, 3, Palette.WOODS[0])
+        }
     }
 
     // ------------------------------------------------------------ night scenery

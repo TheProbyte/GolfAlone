@@ -171,6 +171,9 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
         Sprites.gull(c, gx, gy, flap, Palette.INK)
     }
 
+    // Windmill blades turn on the shot's own clock (still between shots).
+    Bodies.windmills(c, hole, ix, iy, if (physics.moving) physics.shotTime else 0f)
+
     // Lanterns and the lighthouse (with its beam) stand over everything.
     Bodies.scenery(c, hole, ix, iy, steppedTime, reduceMotion)
 

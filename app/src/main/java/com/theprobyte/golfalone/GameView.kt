@@ -941,6 +941,22 @@ class GameView(
     override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) {
         strokes++ // penalty
         shotLive = false
+        if (hole.at(x, y) == Tile.LAVA) {
+            // Lava: a sizzle and a burst of embers instead of a splash.
+            sfx.sizzle(pan(x))
+            haptics.splash(this)
+            repeat(16) {
+                val a = rnd.nextFloat() * 2f * PI.toFloat()
+                val s = 15f + rnd.nextFloat() * 40f
+                spawn(x, y, cos(a) * s, sin(a) * s - 25f, 0.5f + rnd.nextFloat() * 0.4f, if (it % 2 == 0) 0xFFF07A30.toInt() else Palette.GOLD)
+            }
+            say("+1 LAVA", x, y - 8f, Palette.HOT)
+            popT = 0f
+            sfx.pop(pan(dropX))
+            ring(dropX, dropY, 0.5f, 6f, Palette.INK)
+            for (i in 0 until tn) tAt[i] = -9f
+            return
+        }
         spriteFx.splash(x, y)
         sfx.splash(pan(x))
         haptics.splash(this)
@@ -981,6 +997,30 @@ class GameView(
     override fun onBarrel(x: Float, y: Float, impact: Float) {
         sfx.barrel(impact, pan(x))
         haptics.wall(this, impact)
+    }
+
+    override fun onVent(x: Float, y: Float) {
+        sfx.hiss(pan(x))
+        haptics.tap(this)
+        repeat(8) { spawn(x, y, rnd.nextFloat() * 24f - 12f, -20f - rnd.nextFloat() * 30f, 0.5f + rnd.nextFloat() * 0.3f, Palette.PAPER[3]) }
+    }
+
+    override fun onPlate(x: Float, y: Float, opened: Boolean) {
+        sfx.gate(opened, pan(x))
+        haptics.tap(this)
+        if (opened) { say("A GATE OPENS", x, y - 8f, Palette.GOLD); if (!reduceMotion) shakeT = 0f }
+    }
+
+    override fun onCrack(x: Float, y: Float) {
+        sfx.icePing(pan(x))
+        repeat(3) { spawn(x, y, rnd.nextFloat() * 20f - 10f, rnd.nextFloat() * 20f - 10f, 0.3f, Palette.PAPER[3]) }
+    }
+
+    override fun onTunnel(x0: Float, y0: Float, x1: Float, y1: Float) {
+        sfx.tunnel(pan(x1))
+        haptics.tap(this)
+        ring(x0, y0, 0.4f, 6f, Palette.INK)
+        ring(x1, y1, 0.4f, 6f, Palette.INK)
     }
 
     override fun onBarrelSink(x: Float, y: Float) {

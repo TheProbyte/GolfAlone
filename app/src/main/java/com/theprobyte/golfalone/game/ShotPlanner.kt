@@ -17,6 +17,8 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
 
     private class Node(val x: Float, val y: Float, val shots: List<Shot>, val score: Float, val state: HoleState, val strokes: Int)
 
+    private val vents: IntArray = hole.tiles.indices.filter { hole.tiles[it].vent }.toIntArray()
+
     /** Walking distance (in tiles) from each tile to the cup, over non-water, non-wall tiles. */
     val distance: IntArray = walk(flooded = false)
 
@@ -45,6 +47,12 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
                 if (t.isLedge && x == nx - t.dropX.toInt() && y == ny - t.dropY.toInt()) continue
                 d[j] = d[i] + 1
                 q.add(j)
+            }
+            // A vent hops the ball over anything within its reach: it's one step from there.
+            for (v in vents) if (d[v] == Int.MAX_VALUE) {
+                val vx = v % hole.w - x
+                val vy = v / hole.w - y
+                if (vx * vx + vy * vy <= VENT_REACH * VENT_REACH) { d[v] = d[i] + 1; q.add(v) }
             }
             // A tunnel's way out is one step from its mouth.
             if (here == Tile.TUNNEL_OUT) for (m in hole.tunnelOf.indices) {
@@ -122,5 +130,10 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
             if (frontier.isEmpty()) return null
         }
         return found
+    }
+
+    private companion object {
+        /** How far (tiles) a vent's hop can carry the ball, for the planner's map. */
+        const val VENT_REACH = 8
     }
 }

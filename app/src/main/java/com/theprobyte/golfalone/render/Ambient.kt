@@ -36,6 +36,8 @@ class Ambient {
     private var fireflies = IntArray(0)
     private var fishes = IntArray(0)
     private var mapH = 1
+    private var seals = IntArray(0)
+    private var sheep = IntArray(0)
 
     fun reset(t: Terrain, theme: String = "cove") {
         this.theme = theme
@@ -44,8 +46,10 @@ class Ambient {
         herons = if (theme == "marsh") pick(t.beachSpots + t.pondSpots, 2, 15) else IntArray(0)
         fireflies = if (theme == "light") pick(t.flowerSpots + t.beachSpots, 6, 16) else IntArray(0)
         fishes = if (theme == "lagoon") pick(t.shallowSpots, 4, 17) else IntArray(0)
-        crabs = if (theme == "light") IntArray(0) else pick(t.beachSpots, 2, 11)
-        flies = if (theme == "cove" || theme == "lagoon") pick(t.flowerSpots, 2, 12) else IntArray(0)
+        seals = if (theme == "frost") pick(t.beachSpots, 2, 20) else IntArray(0)
+        sheep = if (theme == "bluff") pick(t.grassSpots, 3, 21) else IntArray(0)
+        crabs = if (theme in setOf("cove", "lagoon", "wreck", "marsh")) pick(t.beachSpots, 2, 11) else IntArray(0)
+        flies = if (theme == "cove" || theme == "lagoon" || theme == "temple") pick(t.flowerSpots, 2, 12) else IntArray(0)
         fish = pick(t.pondSpots, 2, 13)
         perch = pick(t.wallTopSpots, 1, 14).firstOrNull() ?: -1
         flewAt = -1f
@@ -71,6 +75,9 @@ class Ambient {
         for (i in herons.indices) { val s = herons[i]; drawHeron(c, s % w - ix, s / w - iy, t, i, hypot(ballX - s % w, ballY - s / w) < 18f) }
         for (i in fireflies.indices) { val s = fireflies[i]; drawFirefly(c, s % w - ix, s / w - iy, t, i, still) }
         if (!still) for (i in fishes.indices) { val s = fishes[i]; drawFish(c, s % w - ix, s / w - iy, t, i) }
+        for (i in seals.indices) { val s = seals[i]; drawSeal(c, s % w - ix, s / w - iy, t, i, still) }
+        for (i in sheep.indices) { val s = sheep[i]; drawSheep(c, s % w - ix, s / w - iy, t, i, still) }
+        if (theme == "temple" && !still) drawParrot(c, ix, iy, t)
         if (!still) for (i in fish.indices) {
             val s = fish[i]
             val p = ((t + i * 2.3f) % 5f) / 1.4f
@@ -166,10 +173,69 @@ class Ambient {
         px(c, x - (cos(a) * 3f).roundToInt(), y - (sin(a) * 3f).roundToInt(), Palette.alpha(Palette.SEA[1], 90))
     }
 
-    /** Rain over the whole view: short slanted streaks, in screen space. */
+    /** A seal lolling on the snowy shore; now and then it shuffles. */
+    private fun drawSeal(c: Canvas, x0: Int, y: Int, t: Float, i: Int, still: Boolean) {
+        val x = x0 + if (!still && ((t + i * 5f) % 10f) > 8f) 1 else 0
+        Pix.oval(c, x + 1f, y + 2f, 4f, 1.5f, Palette.alpha(Palette.INK_SHADOW, 70))
+        rect(c, x - 3, y - 1, 6, 3, Palette.STONES[2])
+        rect(c, x - 2, y - 2, 4, 1, Palette.STONES[3])
+        rect(c, x + 2, y - 3, 2, 2, Palette.STONES[2])
+        px(c, x + 3, y - 3, Palette.INK_SHADOW)
+        px(c, x - 4, y + 1, Palette.STONES[1])
+    }
+
+    /** A sheep grazing: a woolly back and a dark head that dips. */
+    private fun drawSheep(c: Canvas, x: Int, y: Int, t: Float, i: Int, still: Boolean) {
+        val graze = !still && ((t * 0.7f + i * 1.3f) % 3f) < 1.5f
+        Pix.oval(c, x + 1f, y + 2.5f, 3.5f, 1.5f, Palette.alpha(Palette.INK_SHADOW, 70))
+        rect(c, x - 2, y - 2, 5, 4, Palette.PAPER[3])
+        px(c, x - 2, y - 2, Palette.PAPER[2]); px(c, x + 2, y + 1, Palette.PAPER[2])
+        rect(c, x + 3, y - 1 + (if (graze) 1 else 0), 2, 2, Palette.STONES[0])
+        px(c, x - 1, y + 2, Palette.STONES[0]); px(c, x + 2, y + 2, Palette.STONES[0])
+    }
+
+    /** A parrot crossing the jungle now and then: red with a blue wing. */
+    private fun drawParrot(c: Canvas, ix: Int, iy: Int, t: Float) {
+        val period = 14f
+        val ph = t % period
+        if (ph > 4f) return
+        val run = (t / period).toInt()
+        val left = Terrain.hash(run, 0, 22) < 0.5f
+        val y = (mapH * (0.2f + 0.6f * Terrain.hash(run, 1, 22))).toInt() + (sin(ph * 5f) * 2f).roundToInt()
+        val x = if (left) (-10 + ph * (w + 20) / 4f).toInt() else (w + 10 - ph * (w + 20) / 4f).toInt()
+        val flap = (t * 10f).toInt() % 2 == 0
+        val sx = x - ix
+        val sy = y - iy
+        rect(c, sx - 1, sy, 3, 2, PARROT)
+        px(c, if (left) sx + 2 else sx - 2, sy, Palette.GOLD)
+        px(c, sx, if (flap) sy - 2 else sy + 2, Palette.SEA[3]); px(c, sx - 1, if (flap) sy - 1 else sy + 1, Palette.SEA[3])
+    }
+
+    /** Weather over the whole view, in screen space: rain at the wreck, embers on the volcano, snow on the fjord. */
     fun rain(c: Canvas, lw: Int, lh: Int, time: Float) {
-        if (theme != "wreck") return
         val t = (time * 15f).toInt() / 15f
+        if (theme == "ember") {
+            for (k in 0 until 18) {
+                val h1 = Terrain.hash(k, 3, 19)
+                val h2 = Terrain.hash(k, 4, 19)
+                val x = ((h1 * (lw + 20) + sin(t * 0.8f + k) * 6f).toInt() + lw) % (lw + 20) - 10
+                val y = lh + 10 - ((h2 * (lh + 20) + t * 14f * (0.6f + h1)) % (lh + 20)).toInt()
+                px(c, x, y, Palette.alpha(if (k % 3 == 0) Palette.GOLD else EMBER, 200))
+            }
+            return
+        }
+        if (theme == "frost") {
+            for (k in 0 until 40) {
+                val h1 = Terrain.hash(k, 5, 19)
+                val h2 = Terrain.hash(k, 6, 19)
+                val x = ((h1 * (lw + 20) + t * 6f + sin(t * 0.9f + k) * 4f).toInt() % (lw + 20)) - 10
+                val y = ((h2 * (lh + 20) + t * 22f * (0.6f + h1)) % (lh + 20)).toInt() - 10
+                px(c, x, y, Palette.alpha(0xFFFFFFFF.toInt(), 200))
+                if (k % 4 == 0) px(c, x + 1, y, Palette.alpha(0xFFFFFFFF.toInt(), 110))
+            }
+            return
+        }
+        if (theme != "wreck") return
         val col = Palette.alpha(Palette.PAPER[3], 90)
         for (k in 0 until 46) {
             val h1 = Terrain.hash(k, 1, 19)
@@ -198,6 +264,8 @@ class Ambient {
         private const val CRAB_DARK = 0xFFA8382E.toInt()
         private const val BEAK = 0xFFF0A040.toInt()
         private const val FIREFLY = 0xFFE8F57A.toInt()
+        private const val EMBER = 0xFFF07A30.toInt()
+        private const val PARROT = 0xFFE0483E.toInt()
         const val FLY_S = 3f
     }
 }
