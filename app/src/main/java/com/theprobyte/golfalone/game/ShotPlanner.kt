@@ -25,12 +25,36 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
     /** The same at high tide (tidal sand is water). */
     private val floodedDistance: IntArray = if (hole.tidal) walk(flooded = true) else distance
 
-    private fun walk(flooded: Boolean): IntArray = IntArray(hole.w * hole.h) { Int.MAX_VALUE }.also { d ->
+    /** Gates: the walking map with only the gate groups in a mask open, and each group's plates. */
+    private val gateMaps = HashMap<Int, IntArray>()
+    private fun gateMap(mask: Int): IntArray = gateMaps.getOrPut(mask) { walk(false, mask) }
+    private val plates: Array<IntArray> = Array(2) { g -> hole.tiles.indices.filter { hole.tiles[it] == Tile.PLATE && hole.plateOf[it] == g }.toIntArray() }
+    private val hasGates = hole.tiles.any { it == Tile.GATE }
+    private val toPlate = HashMap<Int, IntArray>()
+    /** Walking distance to the nearest plate of group [g], with the gates in [mask] open. */
+    private fun toPlate(g: Int, mask: Int): IntArray = toPlate.getOrPut(g * 8 + mask) { walk(false, mask, plates[g]) }
+
+    /** Best guess at the walk to the cup from tile [i] with gates [mask] open: straight there, or via a plate first. */
+    private fun gateEstimate(i: Int, mask: Int, depth: Int = 0): Int {
+        var best = gateMap(mask)[i]
+        if (depth < 2) for (g in 0..1) {
+            if (mask and (1 shl g) != 0 || plates[g].isEmpty()) continue
+            val reach = toPlate(g, mask)[i]
+            if (reach == Int.MAX_VALUE) continue
+            var after = Int.MAX_VALUE
+            for (p in plates[g]) after = minOf(after, gateEstimate(p, mask or (1 shl g), depth + 1))
+            if (after != Int.MAX_VALUE) best = minOf(best, reach + after)
+        }
+        return best
+    }
+
+    /** BFS distances to the cup (or to the [sources] given), over walkable tiles; [gates] says which gate groups are open. */
+    private fun walk(flooded: Boolean, gates: Int = 3, sources: IntArray? = null): IntArray = IntArray(hole.w * hole.h) { Int.MAX_VALUE }.also { d ->
         val cx = floor(hole.cupX / TILE).toInt()
         val cy = floor(hole.cupY / TILE).toInt()
         val q = ArrayDeque<Int>()
-        d[cy * hole.w + cx] = 0
-        q.add(cy * hole.w + cx)
+        if (sources == null) { d[cy * hole.w + cx] = 0; q.add(cy * hole.w + cx) }
+        else for (s0 in sources) { d[s0] = 0; q.add(s0) }
         while (q.isNotEmpty()) {
             val i = q.removeFirst()
             val x = i % hole.w
@@ -42,6 +66,7 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
                 val j = ny * hole.w + nx
                 // Cracked planks can be smashed and gates opened, so they're ways through.
                 if ((t.solid && t != Tile.PLANK && t != Tile.GATE) || t.water || (flooded && t == Tile.TIDAL) || d[j] != Int.MAX_VALUE) continue
+                if (t == Tile.GATE && (gates shr hole.plateOf[j]) and 1 == 0) continue
                 // Ledges are one way: no climbing onto one from below, or off one uphill.
                 if (here.isLedge && nx == x + here.dropX.toInt() && ny == y + here.dropY.toInt()) continue
                 if (t.isLedge && x == nx - t.dropX.toInt() && y == ny - t.dropY.toInt()) continue
@@ -64,10 +89,14 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
     }
 
     /** How far a ball resting at ([x], [y]) is from the cup, for a next shot played at [high] tide. */
-    private fun score(x: Float, y: Float, high: Boolean = false): Float {
+    private fun score(x: Float, y: Float, high: Boolean = false, gates: Int = 3): Float {
         val tx = floor(x / TILE).toInt()
         val ty = floor(y / TILE).toInt()
         if (tx !in 0 until hole.w || ty !in 0 until hole.h) return Float.MAX_VALUE
+        if (hasGates) {
+            val g = gateEstimate(ty * hole.w + tx, gates)
+            return if (g == Int.MAX_VALUE) Float.MAX_VALUE else g.toFloat() + if (hole.tile(tx, ty) == Tile.ROUGH) 1.5f else 0f
+        }
         val map = if (high) floodedDistance else distance
         var d = map[ty * hole.w + tx]
         // A ball on the drawn edge of a tile the map can't walk (the lip of flooded sand, say):
@@ -118,7 +147,7 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
                     continue
                 }
                 sim.endShot()
-                val s = score(sim.x, sim.y, simState.high)
+                val s = score(sim.x, sim.y, simState.high, (if (simState.gates[0]) 1 else 0) or (if (simState.gates[1]) 2 else 0))
                 if (s == Float.MAX_VALUE) continue
                 // One survivor per 4 px cell and hole state keeps the beam diverse.
                 val key = ((floor(sim.x / 4).toLong() shl 32) or (floor(sim.y / 4).toLong() and 0xffffffffL)) xor (simState.key() * 0x9E3779B97F4A7C15uL.toLong())

@@ -84,7 +84,8 @@ object Bodies {
             val x = (i % hole.w) * TILE - ix
             val y = (i / hole.w) * TILE - iy
             if (g < 0) { px(c, x + 3, y + 3, Palette.STONES[1]); px(c, x + 4, y + 4, Palette.STONES[1]); continue }
-            glyph(c, x + 2, y + 2, g, st.gates[g])
+            rect(c, x + 1, y + 1, TILE - 2, TILE - 2, if (st.gates[g]) Palette.SANDS[2] else Palette.SANDS[1])
+            glyph(c, x + 2, y + 2, g, true)
         }
         // Gates: a carved stone slab while shut; rubble once open.
         for (i in hole.tilesOf(Tile.GATE)) {
@@ -97,11 +98,13 @@ object Bodies {
                 px(c, x + 1, y + 6, Palette.STONES[1]); px(c, x + 5, y + 2, Palette.STONES[1]); px(c, x + 6, y + 5, Palette.STONES[3])
                 continue
             }
+            // Sandstone, so a gate never reads as plain wall.
             rect(c, x + 1, y + 6, TILE, 2, shadow)
-            rect(c, x, y, TILE, 5, Palette.STONES[3])
-            rect(c, x, y + 5, TILE, 3, Palette.STONES[1])
-            rect(c, x, y, TILE, 1, Palette.STONES[4])
-            if (hole.plateAt(tx, ty - 1) != g || hole.tile(tx, ty - 1) != Tile.GATE) glyph(c, x + 2, y + 1, g, false)
+            rect(c, x, y, TILE, 5, Palette.SANDS[3])
+            rect(c, x, y + 5, TILE, 3, Palette.SANDS[1])
+            rect(c, x, y, TILE, 1, Palette.SANDS[4])
+            px(c, x + TILE - 1, y + 1, Palette.SANDS[2])
+            glyph(c, x + 2, y + 1, g, false)
         }
         // Tunnels: a dark pit for the mouth, an arch where it comes out.
         for (i in hole.tilesOf(Tile.TUNNEL_IN)) {
@@ -262,7 +265,7 @@ object Bodies {
 
     /** A gate group's glyph: a sun for 'G' (gold), a moon for 'J' (blue); bright when [lit]. */
     private fun glyph(c: Canvas, x: Int, y: Int, g: Int, lit: Boolean) {
-        val col = if (g == 0) (if (lit) Palette.GOLD else Palette.SANDS[1]) else (if (lit) Palette.SEA[5] else Palette.SEA[2])
+        val col = if (g == 0) (if (lit) Palette.GOLD else Palette.FLAG_DARK) else (if (lit) Palette.SEA[5] else Palette.SEA[1])
         if (g == 0) {
             rect(c, x + 1, y + 1, 2, 2, col); px(c, x + 2, y, col); px(c, x + 2, y + 3, col); px(c, x, y + 2, col); px(c, x + 3, y + 1, col)
         } else {
