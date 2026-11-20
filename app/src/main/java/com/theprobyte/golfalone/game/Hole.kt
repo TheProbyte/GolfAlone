@@ -69,9 +69,9 @@ enum class Tile(
     OBSIDIAN(c = 8f, k = 0.4f),
     /** A glowing hazard that works like water. */
     LAVA(water = true),
-    ICE(c = 12f, k = 0.5f),
+    ICE(c = 18f, k = 0.7f),
     /** Ice that cracks under a rolling ball and opens to water after the shot. */
-    THIN_ICE(c = 12f, k = 0.5f),
+    THIN_ICE(c = 18f, k = 0.7f),
     /** Soft snow: a ball rolling in stops dead. */
     SNOW(c = 500f, k = 8f),
     /** A switch plate (see Hole.plateOf): rolling over it opens its gates. */

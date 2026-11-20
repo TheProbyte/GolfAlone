@@ -60,7 +60,7 @@ class NewRulesTest {
         }
         val grass = roll('.')
         assertTrue("obsidian ${roll('g')} vs grass $grass", roll('g') > grass * 2.5f)
-        assertTrue("ice ${roll('i')} vs grass $grass", roll('i') > grass * 2f)
+        assertTrue("ice ${roll('i')} vs grass $grass", roll('i') > grass * 1.5f)
     }
 
     @Test fun thinIceCracksThenOpensAfterTheShot() {

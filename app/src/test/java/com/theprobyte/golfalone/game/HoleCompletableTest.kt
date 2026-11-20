@@ -35,7 +35,8 @@ class HoleCompletableTest {
      */
     @Test fun barrelsNeverLockAHole() {
         val rnd = java.util.Random(11)
-        for (hole in Holes.everyHole.filter { it.barrels.isNotEmpty() }) {
+        // Barrels and thin ice both change for good: neither may ever strand the ball.
+        for (hole in Holes.everyHole.filter { it.barrels.isNotEmpty() || it.thinCount > 0 }) {
             repeat(6) { trial ->
                 val st = HoleState(hole)
                 val ph = Physics(hole, st)
