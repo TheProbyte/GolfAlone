@@ -577,24 +577,31 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         }
     }
 
-    /** A ledge: grass to its lip, then the drop (a rock face where you can see it). */
+    /**
+     * A ledge, drawn the same whichever way it drops (so you can always read it): a lit lip,
+     * a rock face, the lower ground in its shadow, and a pale chevron pointing down the drop.
+     */
     private fun ledgePixel(x: Int, y: Int): Int {
         val t = tileAt(x, y)
         val u = x % TILE
         val v = y % TILE
-        // How far into the drop this pixel is (0 at the top of the tile's slope, TILE-1 at the bottom).
+        // How far down the drop this pixel is (0 at the lip, TILE-1 at the foot), and across it.
         val k = when {
             t.dropY > 0f -> v
             t.dropY < 0f -> TILE - 1 - v
             t.dropX > 0f -> u
             else -> TILE - 1 - u
         }
-        val grass = styled(Palette.GRASS[4], 0.3f)
-        if (t.dropY < 0f) return if (k >= TILE - 2) Palette.GRASS[2] else grass // a cliff facing away: only its lip shows
+        val across = if (t.dropY != 0f) u else v
+        val a = kotlin.math.abs(across - 3.5f)
+        val chevron = ((x / TILE + y / TILE) % 2 == 0) && a < 3f && k == 2 + (3f - a).toInt()
+        if (chevron) return Palette.PAPER[2]
         return when {
-            k < 2 -> if (k == 1) Palette.GRASS[5] else grass
-            k == 2 -> Palette.GRASS[2]
-            else -> if ((x * 3 + y) % 7 == 0) Palette.STONES[1] else if (k >= TILE - 2) Palette.STONES[0] else Palette.STONES[2]
+            k == 0 -> styled(Palette.GRASS[6], 0.3f)
+            k == 1 -> styled(Palette.GRASS[5], 0.3f)
+            k <= 4 -> if ((x * 3 + y) % 7 == 0) Palette.STONES[1] else Palette.STONES[2]
+            k == 5 -> Palette.STONES[1]
+            else -> Palette.GRASS[2]
         }
     }
 
