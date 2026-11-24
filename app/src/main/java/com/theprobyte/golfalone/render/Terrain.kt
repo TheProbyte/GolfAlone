@@ -87,6 +87,11 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
     private val rails = hole.rails
     /** The sun path's centre line, through the middle of the map. */
     private val sunLine = (w * 0.6f + h * 0.8f) / 2f
+    /** How much fairway is near each pixel (0..1), for the first cut where rough meets it. */
+    private var fairNear = FloatArray(0)
+    /** Each hole mows its own way: straight bands, or diagonal ones (either way). */
+    private val mow = (Terrain.hash(hole.w, hole.h, hole.name.hashCode()) * 3).toInt()
+
     /** Which water pixels are lava (inland, glowing). */
     private val lava = BooleanArray(w * h)
     /** Where ambient life can be: beaches (crabs), flower patches (butterflies), ponds (fish), wall tops (gulls). */
@@ -157,6 +162,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
 
     private fun computeKinds() {
         val sand = blur(3) { it == Tile.SAND }
+        fairNear = blur(3) { it == Tile.FAIRWAY || it.isRamp }
         val green = blur(3) { it.isGreen }
         val fair = blur(3) { it == Tile.FAIRWAY }
         val tidal = if (hole.tidal) blur(2) { it == Tile.TIDAL } else null
@@ -360,27 +366,41 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         if (kd == K_RAMP) return ramp(x, y)
 
         // Beaches where land meets the sea.
-        if (kd != K_MUD && d < 3.4f + hash(x / 3, y / 3, 3)) return when (hole.style) {
+        val beachTop = 3.4f + hash(x / 3, y / 3, 3)
+        // Dune grass: little tufts where the grass gives way to the beach.
+        if (hole.style == "" && d >= beachTop - 1.2f && d < beachTop && hash(x / 2, y, 104) < 0.35f && y % 2 == 0) return Palette.ROUGH_DARK
+        if (kd != K_MUD && d < beachTop) return when (hole.style) {
             "ember" -> if (d < 1.5f) Palette.STONES[2] else Palette.STONES[1]   // black sand
             "frost" -> if (d < 1.5f) Palette.PAPER[2] else Palette.PAPER[3]     // snow to the waterline
             else -> if (d < 1.5f) Palette.SAND_LIGHT else Palette.SAND
         }
 
         return when (kd) {
-            K_FAIR -> styled(if (ty % 2 == 0) Palette.FAIR_A else Palette.FAIR_B, 0.18f)
-            K_ROUGH -> styled(Palette.ROUGH, 0.45f)
+            K_FAIR -> styled(fairPixel(x, y), 0.18f)
+            K_ROUGH -> {
+                // The first cut: a dithered band of slightly lighter grass where the rough meets fairway.
+                val f = fairNear[i]
+                if (f > 0.12f && (f > 0.3f || (x + y) % 2 == 0)) styled(Palette.lerp(Palette.ROUGH, Palette.FAIR_B, 0.5f), 0.45f)
+                else styled(roughPixel(x, y), 0.45f)
+            }
             K_RIDGE -> if ((x + y * 2 + (hash(x / 6, y / 4, 75) * 4).toInt()) % 9 < 2) Palette.GRASS[6] else Palette.GRASS[5]
             K_SAND -> {
                 val lip = k(x - 1, y) != K_SAND || k(x + 1, y) != K_SAND || k(x, y - 1) != K_SAND || k(x, y + 1) != K_SAND
+                // Light from the top left: the bunker's far (top/left) face is in shadow, the near side lit.
+                val face = k(x, y - 1) != K_SAND || k(x, y - 2) != K_SAND || k(x - 1, y) != K_SAND
+                val near = k(x, y + 1) != K_SAND || k(x + 1, y) != K_SAND
                 when {
                     lip -> Palette.SAND_DARK
+                    face -> if ((x + y) % 2 == 0) Palette.SAND_DARK else Palette.SAND
+                    near -> Palette.SAND_LIGHT
                     (x + 2 * y + (hash(x / 6, y / 6, 4) * 3).toInt()) % 7 == 0 -> Palette.SAND_DARK // wind ripples
                     else -> Palette.SAND
                 }
             }
             K_GREEN -> {
                 val t = tileAt(x, y)
-                var g = if (((x / 8) + (y / 8)) % 2 == 0) Palette.GREEN_A else Palette.GREEN_B
+                // Fine stripes, mown the same way as the hole's fairway, in close tones.
+                var g = if (mowBand(x * 2, y * 2)) Palette.GREEN_A else Palette.lerp(Palette.GREEN_A, Palette.GREEN_B, 0.6f)
                 if (t.slopeX != 0f || t.slopeY != 0f) {
                     // Grain streaks running downhill (the glints show which way).
                     val along = if (t.slopeX != 0f) x else y
@@ -389,7 +409,15 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                     if (across % 4 == 1 && (along + across * 3) % 6 < 3) g = Palette.SLOPE_DARK
                 }
                 val collar = k(x - 1, y) != K_GREEN || k(x + 1, y) != K_GREEN || k(x, y - 1) != K_GREEN || k(x, y + 1) != K_GREEN
-                if (collar) Palette.COLLAR else g
+                // Raised greens: a lit rim along the top and left, a shaded one along the bottom and right.
+                val lit = k(x - 2, y) != K_GREEN || k(x, y - 2) != K_GREEN
+                val shade = k(x + 2, y) != K_GREEN || k(x, y + 2) != K_GREEN
+                when {
+                    collar -> Palette.COLLAR
+                    lit -> Palette.lighter(Palette.GREEN_A)
+                    shade -> Palette.GREEN_B
+                    else -> g
+                }
             }
             else -> Palette.ROUGH
         }
@@ -482,6 +510,38 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         }
         val ripple = (2 * y + (kotlin.math.sin(x * 0.45f + y / 6) * 2f).toInt()) % 7 == 0
         return if (ripple) Palette.SANDS[1] else Palette.SANDS[2]
+    }
+
+    /** Fairway: mowing stripes with fine mower lines, and a lit edge where each light stripe starts. */
+    private fun fairPixel(x: Int, y: Int): Int {
+        val light = mowBand(x, y)
+        val base = if (light) Palette.FAIR_A else Palette.FAIR_B
+        // The roller's edge: the first pixel row of a light stripe catches the light.
+        val prev = when (mow) { 0 -> mowBand(x, y - 1); 1 -> mowBand(x - 1, y); else -> mowBand(x + 1, y) }
+        if (light && !prev) return Palette.lerp(Palette.FAIR_A, Palette.GRASS[6], 0.35f)
+        // Mower lines: every fourth row in the stripe's direction, a shade apart.
+        val along = when (mow) { 0 -> y; 1 -> x + y; else -> y - x + 1024 }
+        if (along % 4 == 0) return Palette.lerp(base, if (light) Palette.FAIR_B else Palette.FAIR_A, 0.22f)
+        return base
+    }
+
+    /** Rough: big soft clumps of darker and lighter grass (cells, not speckle). */
+    private fun roughPixel(x: Int, y: Int): Int {
+        val cx = (x + (hash(x / 3, y / 3, 101) * 3).toInt()) / 7
+        val cy = (y + (hash(x / 3, y / 3, 102) * 3).toInt()) / 6
+        val h = hash(cx, cy, 103)
+        return when {
+            h < 0.18f -> Palette.lerp(Palette.ROUGH, Palette.ROUGH_DARK, 0.55f)
+            h > 0.86f -> Palette.lerp(Palette.ROUGH, Palette.ROUGH_LIGHT, 0.3f)
+            else -> Palette.ROUGH
+        }
+    }
+
+    /** Mowing: two-tile bands, straight or diagonal depending on the hole. */
+    private fun mowBand(x: Int, y: Int): Boolean = when (mow) {
+        0 -> (y / 16) % 2 == 0
+        1 -> ((x + y + 1024) / 14) % 2 == 0
+        else -> ((y - x + 1024) / 14) % 2 == 0
     }
 
     /** Grass on a frosty or volcanic course: dusted with snow, or scorched darker. */
@@ -635,6 +695,16 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                         K_ROUGH -> if (r < 0.5f) { // a tuft
                             put(x, y, Palette.ROUGH_DARK, K_ROUGH); put(x + 1, y, Palette.ROUGH_DARK, K_ROUGH)
                             put(x + 2, y, Palette.ROUGH_DARK, K_ROUGH); put(x + 1, y - 1, Palette.ROUGH_LIGHT, K_ROUGH)
+                        } else if (r < 0.62f) { // clover: a soft lighter clump
+                            val cl = Palette.lerp(Palette.ROUGH, Palette.ROUGH_LIGHT, 0.5f)
+                            put(x, y, cl, K_ROUGH); put(x + 1, y, cl, K_ROUGH); put(x, y + 1, cl, K_ROUGH)
+                            put(x + 1, y - 1, Palette.ROUGH_LIGHT, K_ROUGH)
+                        } else if (r < 0.72f) { // long grass: blades with lit tips
+                            put(x, y, Palette.ROUGH_DARK, K_ROUGH); put(x, y - 1, Palette.ROUGH_DARK, K_ROUGH); put(x, y - 2, Palette.ROUGH_LIGHT, K_ROUGH)
+                            put(x + 2, y, Palette.ROUGH_DARK, K_ROUGH); put(x + 2, y - 1, Palette.ROUGH_LIGHT, K_ROUGH)
+                        } else if (r < 0.77f && edge[y * w + x] < 9f) { // pebbles near the shore
+                            put(x, y, Palette.STONES[3], K_ROUGH); put(x + 1, y, Palette.STONES[2], K_ROUGH)
+                            put(x + 3, y + 1, Palette.STONES[3], K_ROUGH)
                         } else if (r > 0.93f) { // a little patch of flowers
                             val fc = if (hash(gx, gy, 5) < 0.5f) Palette.FLOWER_Y else Palette.FLOWER_P
                             put(x, y, fc, K_ROUGH); put(x, y + 1, Palette.ROUGH_DARK, K_ROUGH)
