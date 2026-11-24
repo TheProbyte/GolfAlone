@@ -65,5 +65,6 @@ dependencies {
 tasks.withType<Test>().configureEach {
     (project.findProperty("shots") as String?)?.let { systemProperty("golfalone.shots", it) }
     (project.findProperty("audio") as String?)?.let { systemProperty("golfalone.audio", it) }
+    (project.findProperty("candidates") as String?)?.let { systemProperty("golfalone.candidates", it) }
     testLogging { events("passed", "failed"); showStandardStreams = true }
 }

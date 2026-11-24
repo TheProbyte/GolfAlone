@@ -27,6 +27,48 @@ object Palette {
     private val worldRamps = arrayOf(SEA, GRASS, SANDS, STONES, WOODS, LEAF, DRIFT, POND)
     private val base = worldRamps.map { it.copyOf() }
 
+    private fun r(vararg v: Long) = IntArray(v.size) { c(v[it]) }
+    private const val R_SEA = 0
+    private const val R_GRASS = 1
+    private const val R_LEAF = 5
+    private const val R_POND = 7
+
+    /**
+     * Courses 10-19 bring their own ground and water before the mood's light is graded over them:
+     * a dry sage desert round a turquoise oasis, violet water under the mushrooms, olive mangroves
+     * in murky water, a cave's black lake, gold autumn grass, jade moss in the zen garden.
+     */
+    private val own: Map<Mood, Map<Int, IntArray>> = mapOf(
+        Mood.DESERT to mapOf(
+            R_GRASS to r(0xFF2A3424, 0xFF3E4A2C, 0xFF56622F, 0xFF6E7E40, 0xFF889646, 0xFFA0A85A, 0xFFB8DC86),
+            R_SEA to r(0xFF103A48, 0xFF145A68, 0xFF1C7E88, 0xFF2CA4A4, 0xFF6CCCC0, 0xFFD0F4E8),
+            R_POND to r(0xFF0E4048, 0xFF136068, 0xFF1A8088, 0xFF34A8A0, 0xFFA8E8D8)),
+        Mood.TWILIGHT to mapOf(
+            R_GRASS to r(0xFF142C34, 0xFF1C443F, 0xFF27604A, 0xFF3A7C56, 0xFF549A62, 0xFF76B46E, 0xFFA8D48C),
+            R_SEA to r(0xFF1A1636, 0xFF2A2258, 0xFF3A3478, 0xFF4E56A0, 0xFF7880C0, 0xFFD0D4F0)),
+        Mood.EVENING to mapOf(
+            R_SEA to r(0xFF1A1838, 0xFF28285E, 0xFF343E84, 0xFF3F62A6, 0xFF74A0C8, 0xFFD8E8F0)),
+        Mood.BRONZE to mapOf(
+            R_GRASS to r(0xFF26301E, 0xFF3A4826, 0xFF52622E, 0xFF6C7E3A, 0xFF8A9A48, 0xFFA8B45C, 0xFFB0D88A),
+            R_SEA to r(0xFF10282E, 0xFF163E48, 0xFF1E5A64, 0xFF308A8C, 0xFF5CA8A0, 0xFFC8E8D8)),
+        Mood.SWAMP to mapOf(
+            R_GRASS to r(0xFF1C2A1C, 0xFF2A3E22, 0xFF3C5628, 0xFF547030, 0xFF6E8A3A, 0xFF8CA44A, 0xFFA8D880),
+            R_SEA to r(0xFF12241E, 0xFF1A3830, 0xFF244E40, 0xFF3C6E6E, 0xFF5E9080, 0xFFC0D8B0),
+            R_POND to r(0xFF12281E, 0xFF1C3C2C, 0xFF28543C, 0xFF3E7050, 0xFF98C098)),
+        Mood.CAVE to mapOf(
+            R_GRASS to r(0xFF102830, 0xFF163C44, 0xFF2A6650, 0xFF3C8460, 0xFF4E9C74, 0xFF5CA888, 0xFF98D0B0),
+            R_SEA to r(0xFF0C0C20, 0xFF141838, 0xFF1E2858, 0xFF304C88, 0xFF4E70A8, 0xFFB0D0F0)),
+        Mood.AUTUMN to mapOf(
+            R_GRASS to r(0xFF2A2818, 0xFF443E20, 0xFF625A28, 0xFF8C7C34, 0xFFA6943E, 0xFFC0AC50, 0xFF8CD87C),
+            R_SEA to r(0xFF16223A, 0xFF1E3656, 0xFF284E74, 0xFF367092, 0xFF6AA0B4, 0xFFD0E8E8),
+            R_LEAF to r(0xFF4A1C18, 0xFF7A2C1C, 0xFFB04A22, 0xFFD8762E, 0xFFF0B048)),
+        Mood.SAKURA to mapOf(
+            R_GRASS to r(0xFF1A3634, 0xFF25504A, 0xFF32705E, 0xFF4A8E70, 0xFF6AAA80, 0xFF8CC490, 0xFFC0E2B0),
+            R_SEA to r(0xFF1A2438, 0xFF24385A, 0xFF2E5478, 0xFF3C789A, 0xFF70A8BC, 0xFFD8ECEC)),
+        Mood.STARRY to mapOf(
+            R_SEA to r(0xFF080A1C, 0xFF0E1430, 0xFF182454, 0xFF2A4C96, 0xFF4A68A8, 0xFFB0C8F0)),
+    )
+
     /** The current time of day; set before anything is baked (see [setMood]). */
     var mood = Mood.DAY
         private set
@@ -37,7 +79,10 @@ object Palette {
      */
     fun setMood(m: Mood) {
         if (m == mood) return
-        for ((k, ramp) in worldRamps.withIndex()) for (i in ramp.indices) ramp[i] = m.grade(base[k][i])
+        for ((k, ramp) in worldRamps.withIndex()) {
+            val from = own[m]?.get(k) ?: base[k]
+            for (i in ramp.indices) ramp[i] = m.grade(from[i])
+        }
         mood = m
         rebuildMaps()
     }

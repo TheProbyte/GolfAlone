@@ -293,7 +293,9 @@ class UiPlaythroughTest {
         assertEquals(GameView.Mode.TITLE, game.mode)
 
         val plays = mapOf("marsh" to listOf(0, 3), "light" to listOf(1, 3), "lagoon" to listOf(1, 3), "wreck" to listOf(1, 2),
-            "ember" to listOf(3), "frost" to listOf(2), "temple" to listOf(0, 1), "bluff" to listOf(1, 2, 5))
+            "ember" to listOf(3), "frost" to listOf(2), "temple" to listOf(0, 1), "bluff" to listOf(1, 2, 5),
+            "oasis" to listOf(0, 2), "mushroom" to listOf(0, 6), "carnival" to listOf(0, 8), "sky" to listOf(0, 6), "clock" to listOf(0, 2),
+            "mangrove" to listOf(0, 1), "crystal" to listOf(0, 4), "autumn" to listOf(0, 2), "zen" to listOf(0), "starfall" to listOf(0, 3))
         for ((id, holes) in plays) {
             while (game.courseForTest.id != id) { press(GameView.B_NEXT_COURSE); runUntil(3000) { !game.fading } }
             run(400)
@@ -314,6 +316,29 @@ class UiPlaythroughTest {
                 press(GameView.B_BACK)
             }
         }
+        // A whole nine-hole round, to the scorecard: the card strip and scorecard fit nine holes.
+        assertEquals(GameView.Mode.TITLE, game.mode)
+        while (game.courseForTest.id != "zen") press(GameView.B_PREV_COURSE)
+        press(GameView.B_PLAY)
+        runUntil(4000) { !game.busy }
+        val course = game.course
+        assertEquals("zen", course.id)
+        assertEquals(9, course.holes.size)
+        for (i in course.holes.indices) {
+            assertEquals(course.holes[i], game.hole)
+            playHole("c-zen-round-${i + 1}")
+            assertTrue("${game.hole.name} holed", game.ballInCup)
+            run(1500)
+            if (i == 7 || i == 8) frame("c-zen-round-${i + 1}-card")
+            press(GameView.B_NEXT); runUntil(4000) { !game.busy }
+        }
+        assertEquals(GameView.Mode.FINAL, game.mode)
+        run(800)
+        frame("c-zen-scorecard")
+        val scores = game.scoresForTest
+        assertEquals(9, scores.size)
+        assertTrue(scores.all { it > 0 })
+        println("zen round: ${scores.toList()} = ${scores.sum()} (par ${course.par})")
         assertTrue("labels that don't fit: ${game.textOverflows}", game.textOverflows.isEmpty())
     }
 
