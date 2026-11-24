@@ -3,7 +3,7 @@ package com.theprobyte.golfalone.game
 import com.theprobyte.golfalone.render.Mood
 
 /**
- * Mirage Oasis: nine holes laid out by the seeded generator (scratchpad gen2.py) and kept
+ * Mirage Oasis: nine holes laid out by the seeded generator (tools/holegen) and kept
  * only where the bot proved them: par is its best plus one, and any gap's helper is really needed.
  */
 object Oasis {

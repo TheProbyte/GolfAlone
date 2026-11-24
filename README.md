@@ -5,9 +5,10 @@ to shoot, and play a quiet island course alone.
 
 ![Screenshots](docs/screenshots.png)
 
-**Status:** nine courses, 54 holes: Driftwood Cove, Saltmarsh Flats, Lighthouse Point, Glass
-Lagoon, Wreck Bay, Ember Isle, Frostbound Fjord, Temple Cay and Windward Bluffs. Finish a round of
-one to open the next. See [the course plan](docs/COURSES_PLAN.md).
+**Status:** nineteen courses, 144 holes. The first nine (Driftwood Cove to Windward Bluffs) are
+hand-painted; the ten after them have nine holes each, laid out by a seeded generator and kept
+only where the bot proved them. Finish a round of one to open the next. See
+[the course plan](docs/COURSES_PLAN.md).
 
 ## What's in
 - **Driftwood Cove, 6 holes:**
@@ -28,6 +29,17 @@ one to open the next. See [the course plan](docs/COURSES_PLAN.md).
   - **Frostbound Fjord** (cold morning): ice, thin ice that gives way after you cross it, snowbanks.
   - **Temple Cay** (jungle): switch plates that open gates, tunnels, vines.
   - **Windward Bluffs** (breezy noon): one-way ledges, windmills, wind on the ridges.
+- **Ten nine-hole courses** ([generator](tools/holegen/README.md)), each with its own colours:
+  - **Mirage Oasis** (desert): quicksand that swallows a ball that stops in it, a turquoise oasis.
+  - **Mushroom Hollow** (twilight): vents that puff you over gaps, bouncy mushrooms, vines.
+  - **Carnival Pier** (evening): pinball bumpers, boost pads, moving belts, windmills.
+  - **Skyreach** (floating islands): kickers that throw you over the void, portals, wind.
+  - **Clockwork Ruins** (bronze): pulse walls that swap with every shot, gates, tunnels.
+  - **Mangrove Maze** (swamp): lily pads that sink after you cross, streams, mud.
+  - **Crystal Caverns** (cave): gravity wells that bend the roll, portals, pulse walls.
+  - **Autumn Woods**: leaf piles, streams, trees.
+  - **Zen Garden** (cherry blossom): raked gravel, koi ponds, moon bridges.
+  - **Starfall Atoll** (starry night): wells, portals, kickers and boosts together.
 - **Play modes:** play the full course, with a running score against par and a scorecard at the
   end, or practise any hole you've unlocked.
 - **Forgiving water:** splashes follow the drawn coastline, and only once the whole ball is in.

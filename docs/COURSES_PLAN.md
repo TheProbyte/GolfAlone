@@ -228,28 +228,34 @@ carries the same glyph; decoys are plain stone.
 Built, par 21. Ledges are drawn the same whichever way they drop, with a chevron pointing down,
 so a one-way step always reads.
 
-## Course 10: Starfall Atoll (finale, night under the stars, 9 holes)
+## Courses 10-19: nine holes each, generated and proven
 
-**New: the connected island.** There are no loading screens: the nine holes sit on one atoll.
-When the ball drops, the cup pops it out and the camera glides to the next tee.
-- Each hole revisits one earlier course's mechanic, in its hardest form.
-- The last hole uses a little of everything.
+Built as ten nine-hole courses (par 34 each) instead of one finale. The layouts come from a
+seeded generator ([tools/holegen](../tools/holegen/README.md)): fixed, so every player gets the
+same holes, but varied far beyond what hand-painting would allow. A hole is kept only if the bot
+proves it: par is its best plus one, no par 4+ can be aced, the drawn coast matches the physics,
+and a gap's helper (kicker, vent, portal) is really needed. Hole 1 of each course teaches its
+mechanic alone.
 
-**Life and sound:**
-- **Life:** glowing surf, shooting stars, and turtles hatching on the last beach.
-- **Sound:** a quiet music bed, the only course with one.
+New mechanics: kickers (`Y y X K`), boost pads (`B`), portal pairs (`1 3`), quicksand (`Q`),
+pulse walls that swap with every shot (`M R`, the lowered set drawn as a pulsing outline),
+gravity wells (`@`), and the sky style, where the sea is open air (a fall costs a stroke).
 
-| # | Hole | Size | Par | Callback |
-|---|---|---|---|---|
-| 1 | Tide Gate | M | 3 | Saltmarsh's tide. |
-| 2 | Bell Buoys | S | 3 | Lighthouse Point's buoys. |
-| 3 | Moon Current | M | 4 | Glass Lagoon's currents. |
-| 4 | The Hulk | M | 4 | Wreck Bay's planks and barrels. |
-| 5 | Steam Garden | S | 3 | Ember Isle's vents. |
-| 6 | Black Ice | M | 4 | Frostbound's ice. |
-| 7 | Star Temple | M | 4 | Temple Cay's gates and tunnels. |
-| 8 | Night Mill | M | 3 | Windward's windmill. |
-| 9 | Starfall | L | 5 | Everything, ending on a green under the stars. |
+| # | Course | Mood | Signature |
+|---|---|---|---|
+| 10 | Mirage Oasis | desert | quicksand |
+| 11 | Mushroom Hollow | twilight | vent gaps, mushroom bumpers |
+| 12 | Carnival Pier | evening | pinball bumpers, boosts, belts |
+| 13 | Skyreach | open sky | kicker gaps over the void |
+| 14 | Clockwork Ruins | bronze | pulse walls, gates |
+| 15 | Mangrove Maze | swamp | sinking lily pads |
+| 16 | Crystal Caverns | cave | gravity wells |
+| 17 | Autumn Woods | autumn | leaf piles, streams |
+| 18 | Zen Garden | sakura | raked gravel, bridges |
+| 19 | Starfall Atoll | starry night | a little of everything |
+
+Each of these moods brings its own grass and water ramps before its light is graded on top
+(`Palette.own`), still held to the surface-distance check in `PaletteMoodTest`.
 
 ---
 

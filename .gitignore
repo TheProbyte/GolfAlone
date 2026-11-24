@@ -7,3 +7,4 @@ build/
 /captures
 .kotlin/
 *.apk
+tools/holegen/cand_*
