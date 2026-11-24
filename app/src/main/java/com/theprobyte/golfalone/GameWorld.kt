@@ -5,6 +5,7 @@ import com.theprobyte.golfalone.GameView.Companion.GULL_SPEED
 import com.theprobyte.golfalone.GameView.Companion.NONE
 import com.theprobyte.golfalone.GameView.Companion.TEE_MARKS
 import com.theprobyte.golfalone.GameView.Companion.TIDE_S
+import com.theprobyte.golfalone.GameView.Companion.ISLAND_FADE_S
 import com.theprobyte.golfalone.GameView.Companion.CRAB_STEP_S
 import com.theprobyte.golfalone.GameView.Companion.WATER_FPS
 import com.theprobyte.golfalone.GameView.Mode
@@ -44,12 +45,15 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
         }
         sy += Terrain.SEA_H
     }
+    // A course just chosen on the title: open sea until its first map is ready.
+    if (backdropPending) return
     val gx = -ix.toFloat()
     val gy = -iy.toFloat()
     // The tide: draw the map for its state, crossfading from the other one as it turns.
     val now = terrain.at(holeState.high)
-    c.drawBitmap(now.ground, gx, gy, blit)
-    c.drawBitmap(now.water(wf), gx, gy, blit)
+    val ground = if (islandFadeT >= 0f) islandPaint.also { it.alpha = (islandFadeT / ISLAND_FADE_S * 255).toInt().coerceIn(0, 255) } else blit
+    c.drawBitmap(now.ground, gx, gy, ground)
+    c.drawBitmap(now.water(wf), gx, gy, ground)
     if (tideT >= 0f && terrain.flooded != null) {
         val was = terrain.at(!holeState.high)
         val a = ((1f - tideT / TIDE_S) * 255).toInt().coerceIn(0, 255)

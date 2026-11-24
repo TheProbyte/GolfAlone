@@ -248,6 +248,25 @@ class UiPlaythroughTest {
         game.dispatchApplyWindowInsets(pixelInsets())
         game.onImmersive = { hide -> game.dispatchApplyWindowInsets(pixelInsets(if (hide) 0 else 63)) }
         run(600)
+        // Switching courses is instant: ten quick taps along, then PLAY starts the course showing.
+        val start = game.courseForTest
+        repeat(10) {
+            val (ax, ay) = game.buttonCenter(GameView.B_NEXT_COURSE)!!
+            tap(ax, ay)
+        }
+        val shown = game.courseForTest
+        assertFalse("ten taps moved along", shown === start)
+        assertFalse("no dissolve when changing course", game.fading)
+        frame("c-switch-quick")
+        press(GameView.B_PLAY)
+        runUntil(4000) { !game.busy }
+        assertEquals(GameView.Mode.PLAY, game.mode)
+        assertTrue("playing the course that was showing", shown.holes.contains(game.hole))
+        run(200)
+        frame("c-switch-played")
+        press(GameView.B_PAUSE); press(GameView.B_QUIT)
+        while (game.courseForTest.id != "cove") { press(GameView.B_PREV_COURSE) }
+
         // A round on a tidal hole: two shots, Save + Quit, Continue. The tide is where it was.
         while (game.courseForTest.id != "marsh") { press(GameView.B_NEXT_COURSE); runUntil(3000) { !game.fading } }
         press(GameView.B_PLAY)

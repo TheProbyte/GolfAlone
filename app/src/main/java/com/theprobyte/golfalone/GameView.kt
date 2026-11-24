@@ -138,6 +138,7 @@ class GameView(
     internal val uc = Canvas()
     internal val blit = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
     internal val tidePaint = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
+    internal val islandPaint = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
     internal val dim = Paint().apply { isFilterBitmap = false; colorFilter = android.graphics.PorterDuffColorFilter(0xB0101828.toInt(), PorterDuff.Mode.SRC_ATOP) }
     internal val src = Rect()
     internal val dst = RectF()
@@ -204,6 +205,12 @@ class GameView(
     internal var shotY = 0f
     internal var shotLive = false
     internal var bookTab = 0
+    /** A course was just chosen on the title and its first map is still building (open sea till then). */
+    internal var backdropPending = false
+    /** The island fading in once it's ready, and the course card sliding in (0..1). */
+    internal var islandFadeT = -1f
+    internal var courseSlideT = 1f
+    internal var courseSlideDir = 0
     /** A course the round just finished has opened (shown on the scorecard), or null. */
     internal var opened: String? = null
     /** Time since the tide last turned (-1: settled). */
@@ -350,6 +357,7 @@ class GameView(
 
     /** [backdrop]: only showing the hole behind the title, so it doesn't use up the hole's flyover. */
     internal fun loadHole(i: Int, backdrop: Boolean = false) {
+        backdropPending = false
         holeIndex = i
         if (!backdrop) lastPlayed = i
         hole = course.holes[i]
@@ -366,7 +374,8 @@ class GameView(
         // Keep water for this hole and the next one shown (the title drifts round to hole 1).
         val next = if (backdrop) (i + 1) % n else i + 1
         for (k in 0 until n) if (k != i && k != next && terrains[k].isDone) terrains[k].get().releaseWater()
-        if (next < n) builder.submit { terrains[next].get().prepareWater() }
+        // Hold this course's future itself: after a course change the list is a different one.
+        if (next < n) { val f = terrains[next]; builder.submit { if (!f.isCancelled) runCatching { f.get().prepareWater() } } }
         slopeTiles = (0 until hole.w * hole.h)
             .filter { val t = hole.tiles[it]; t.slopeX != 0f || t.slopeY != 0f }.toIntArray()
         strokes = 0
@@ -404,10 +413,13 @@ class GameView(
      */
     internal fun switchCourse(c: Course) {
         if (c === course) return
+        // No waiting: a map mid-build for the old course finishes in the background and is thrown
+        // away; the new course's maps queue behind it. The title shows open sea until hole 1 is ready.
         for (f in terrains) f.cancel(false)
-        builder.submit {}.get() // wait out a map that's mid-build
         for (f in terrains) if (f.isDone && !f.isCancelled) runCatching { f.get().releaseWater() }
         course = c
+        hudHole = -1
+        backdropPending = true
         progress.course = c.id
         progress.lastCourse = c.id
         Palette.setMood(c.mood)
@@ -429,7 +441,11 @@ class GameView(
         if (list[k] === course || fadeT >= 0f) return
         sfx.tap()
         haptics.tap(this)
-        fadeTo { switchCourse(list[k]); loadHole(0, backdrop = true); setMode(Mode.TITLE) }
+        // Instant: the card changes now and the island fades in as soon as its map is built.
+        switchCourse(list[k])
+        courseSlideT = 0f
+        courseSlideDir = d
+        titlePanAt = modeT + TITLE_PAN_S
     }
 
     internal fun wantsFlyover() = isLong() && !flownOver[holeIndex] && !reduceMotion
@@ -1097,8 +1113,15 @@ class GameView(
         sheetT += dt
         if (selT < 1f) selT = min(1f, selT + dt / 0.22f)
         updateGlide(dt)
+        if (backdropPending && terrains[0].isDone && !terrains[0].isCancelled) {
+            loadHole(0, backdrop = true)
+            islandFadeT = 0f
+            camSnap = true
+        }
+        if (islandFadeT >= 0f) { islandFadeT += dt; if (islandFadeT > ISLAND_FADE_S) islandFadeT = -1f }
+        if (courseSlideT < 1f) courseSlideT = min(1f, courseSlideT + dt / COURSE_SLIDE_S)
         // The title's backdrop drifts from hole to hole.
-        if (mode == Mode.TITLE && sheet == Sheet.NONE && fadeT < 0f && glideT < 0f && !reduceMotion && modeT > titlePanAt) {
+        if (mode == Mode.TITLE && sheet == Sheet.NONE && fadeT < 0f && glideT < 0f && !backdropPending && !reduceMotion && modeT > titlePanAt) {
             titlePanAt = modeT + TITLE_PAN_S
             val k = (holeIndex + 1) % n
             if (terrains[k].isDone) glideTo(false) { loadHole(k, backdrop = true) }
@@ -1311,7 +1334,7 @@ class GameView(
         return RedrawPolicy.State(
             touching = aiming || pressedId != NONE || !swipeX.isNaN() || logoDownT >= 0f || tapAnywhere || tapOutside,
             ballMoving = physics.moving,
-            transitioning = fadeT >= 0f || glideT >= 0f || sheetT < 0.35f || modeT < 0.7f || selT < 1f || flyover || sinkT >= 0f ||
+            transitioning = fadeT >= 0f || glideT >= 0f || backdropPending || islandFadeT >= 0f || courseSlideT < 1f || sheetT < 0.35f || modeT < 0.7f || selT < 1f || flyover || sinkT >= 0f ||
                 (mode == Mode.CARD && cardT < 0.7f) || (mode == Mode.PLAY && strokes == 0 && holeT < 2.7f) || stampT >= 0f,
             effects = effects,
             cameraMoving = cameraMoving,
@@ -1610,6 +1633,9 @@ class GameView(
         const val SO_CLOSE = 7f
         /** How long the map takes to crossfade when the tide turns (s). */
         const val TIDE_S = 0.8f
+        /** Choosing a course: the island's fade-in and the card's slide (s). */
+        const val ISLAND_FADE_S = 0.25f
+        const val COURSE_SLIDE_S = 0.15f
         /** How long a crab takes to walk to its next tile (s). */
         const val CRAB_STEP_S = 0.45f
         /** Practice: holding the pause chip this long restarts the hole. */

@@ -52,14 +52,16 @@ internal fun GameView.drawTitle(c: Canvas) {
     val aw = 26
     iconButton(c, B_PREV_COURSE, pad, st + 6, aw, SECONDARY_H, Sprites.iconLeft, ci > 0)
     iconButton(c, B_NEXT_COURSE, lw - pad - aw, st + 6, aw, SECONDARY_H, Sprites.iconRight, ci < Holes.COURSES.size - 1)
-    bigText(c, course.name, lw / 2, st + 8, if (open) Palette.PAPER_INK else Palette.PAPER_INK_DIM)
+    // The name slides in from the side you moved towards.
+    val slide = if (reduceMotion) 0 else ((1f - courseSlideT) * 14f * courseSlideDir).roundToInt()
+    bigText(c, course.name, lw / 2 + slide, st + 8, if (open) Palette.PAPER_INK else Palette.PAPER_INK_DIM)
     val best = progress.courseBest()
     val info = when {
         !open -> "LOCKED * ${course.holes.size} HOLES * PAR ${course.par}"
         best == 0 -> "${course.holes.size} HOLES * PAR ${course.par}"
         else -> "BEST $best (${parText(best - course.par)}) * PAR ${course.par}"
     }
-    smallText(c, info, lw / 2, st + 19, Palette.PAPER_INK_DIM)
+    smallText(c, info, lw / 2 + slide, st + 19, Palette.PAPER_INK_DIM)
     // Course dots.
     val cn = Holes.COURSES.size
     for (k in 0 until cn) rect(c, lw / 2 - cn * 3 + k * 6 + 1, st + 26, 3, 2, if (k == ci) Palette.STAMP_RED else Palette.PAPER[1])
