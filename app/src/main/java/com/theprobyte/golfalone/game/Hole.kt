@@ -191,6 +191,8 @@ class Hole(
 ) {
     /** How the course paints its shores and grass: "" (sand), "ember" (black sand), "frost" (snow). Set by the course. */
     var style: String = ""
+    /** Currents run as conveyor belts on these courses. */
+    val belts: Boolean get() = style == "carnival" || style == "clock"
     val windX: Float = windDeg?.let { kotlin.math.cos(Math.toRadians(it.toDouble())).toFloat() } ?: 0f
     val windY: Float = windDeg?.let { kotlin.math.sin(Math.toRadians(it.toDouble())).toFloat() } ?: 0f
     val w: Int = rows.first().length

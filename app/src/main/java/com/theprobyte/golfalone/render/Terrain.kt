@@ -501,8 +501,22 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         return if (y % 3 == 0) Palette.WOODS[0] else Palette.WOODS[1]
     }
 
+    /** A conveyor belt (carnival and clockwork currents): dark rubber between steel rails. Its ridges move in [Bodies]. */
+    private fun beltPixel(x: Int, y: Int): Int {
+        val t = tileAt(x, y)
+        val tx = Math.floorDiv(x, TILE)
+        val ty = Math.floorDiv(y, TILE)
+        val across = if (t.flowX != 0f) y - ty * TILE else x - tx * TILE
+        val (lo, hi) = if (t.flowX != 0f) hole.tile(tx, ty - 1) to hole.tile(tx, ty + 1) else hole.tile(tx - 1, ty) to hole.tile(tx + 1, ty)
+        if (across == 0 && !lo.flows) return Palette.STONES[4]
+        if (across == 1 && !lo.flows) return Palette.STONES[2]
+        if (across == TILE - 1 && !hi.flows) return Palette.STONES[1]
+        return if (hash(x / 2, y / 2, 112) < 0.1f) Palette.STONES[1] else Palette.STONES[0]
+    }
+
     /** Clear turquoise water over sand: a bright rim at the drop-off, caustic lines, darker channels. */
     private fun shallow(x: Int, y: Int, d: Float): Int {
+        if (hole.belts && tileAt(x, y).flows) return beltPixel(x, y)
         if (d < 1.2f) return Palette.SEA[5]
         if (d < 2.4f && (x + y) % 2 == 0) return Palette.SEA[5]
         val t = tileAt(x, y)
@@ -620,9 +634,21 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
     }
 
     /** Quicksand: pale damp sand in rings (it swirls, drawn live). */
+    /** Quicksand: wet, darker than a bunker, in rings closing on the middle of the patch. */
     private fun quickPixel(x: Int, y: Int): Int {
-        val ring = ((x * 3 + y * 5) / 4 + (hash(x / 5, y / 5, 106) * 3).toInt()) % 5 == 0
-        return if (ring) Palette.SANDS[2] else Palette.lerp(Palette.SANDS[3], Palette.SANDS[2], 0.4f)
+        val tx = (x / TILE).coerceIn(0, hole.w - 1)
+        val ty = (y / TILE).coerceIn(0, hole.h - 1)
+        val i = ty * hole.w + tx
+        val wet = Palette.lerp(Palette.SANDS[2], Palette.SANDS[1], 0.45f)
+        if (hole.tile(tx, ty) != Tile.QUICKSAND) return wet
+        val d = kotlin.math.hypot(x + 0.5f - hole.quickX[i], y + 0.5f - hole.quickY[i])
+        val ring = (d + hash(x / 3, y / 3, 106) * 0.8f) % 4f
+        return when {
+            d < 1.5f -> Palette.SANDS[0]
+            ring < 1f -> Palette.SANDS[1]
+            ring < 1.6f && (x + y) % 2 == 0 -> Palette.SANDS[2]
+            else -> wet
+        }
     }
 
     /** Lava: a dark crust with glowing cracks, molten towards the middle. */

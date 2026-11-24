@@ -39,8 +39,29 @@ object Bodies {
         crabFromX: FloatArray, crabFromY: FloatArray, crabK: Float, showSteps: Boolean,
         bumpX: Float, bumpY: Float, bumpT: Float,
     ) {
+        // Belts: ridges riding along the way the belt runs.
+        if (hole.belts) for (i in hole.currentTiles) {
+            val t = hole.tiles[i]
+            val tx = i % hole.w
+            val ty = i / hole.w
+            val horiz = t.flowX != 0f
+            val sign = if (horiz) t.flowX else t.flowY
+            val lo = if (horiz) hole.tile(tx, ty - 1) else hole.tile(tx - 1, ty)
+            val hi = if (horiz) hole.tile(tx, ty + 1) else hole.tile(tx + 1, ty)
+            val b0 = if (lo.flows) 0 else 2
+            val b1 = if (hi.flows) TILE else TILE - 1
+            for (k in 0 until TILE / 4) {
+                val along = ((k * 4 + time * 14f * sign) % TILE + TILE) % TILE
+                val a = along.toInt()
+                for (b in b0 until b1) {
+                    val x = tx * TILE + (if (horiz) a else b) - ix
+                    val y = ty * TILE + (if (horiz) b else a) - iy
+                    px(c, x, y, Palette.STONES[2])
+                }
+            }
+        }
         // Currents: streaks of foam drifting the way the water runs.
-        for (i in hole.currentTiles) {
+        if (!hole.belts) for (i in hole.currentTiles) {
             val t = hole.tiles[i]
             val tx = i % hole.w
             val ty = i / hole.w

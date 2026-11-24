@@ -1,6 +1,6 @@
 """Seeded hole generator for courses 10-19: a winding island from tee to green, with the
 theme's challenges laid across it. Every map is then proven (or thrown away) by the bot."""
-import random
+import random, zlib
 from gen import Map, current
 
 LAND = '.,:sPmrn;'
@@ -163,7 +163,7 @@ def challenge(kind, m, rnd, pts, ya, yb, extra):
 
 def make(theme, seed, size, teach=False):
     T = THEMES[theme]
-    rnd = random.Random(seed * 7919 + hash(theme) % 1000)
+    rnd = random.Random(seed * 7919 + zlib.crc32(theme.encode()) % 1000)
     W = 20 if rnd.random() < 0.6 else 22
     H = {'S': rnd.randint(30, 36), 'M': rnd.randint(44, 52), 'L': rnd.randint(60, 70), 'X': rnd.randint(64, 70)}[size]
     m = Map(W, H)

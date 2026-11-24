@@ -234,8 +234,8 @@ Built as ten nine-hole courses (par 34 each) instead of one finale. The layouts 
 seeded generator ([tools/holegen](../tools/holegen/README.md)): fixed, so every player gets the
 same holes, but varied far beyond what hand-painting would allow. A hole is kept only if the bot
 proves it: par is its best plus one, no par 4+ can be aced, the drawn coast matches the physics,
-and a gap's helper (kicker, vent, portal) is really needed. Hole 1 of each course teaches its
-mechanic alone.
+and a gap's helper (kicker, vent, portal) is really needed. Hole 1 of each course brings in
+its mechanic with no other challenge beside it.
 
 New mechanics: kickers (`Y y X K`), boost pads (`B`), portal pairs (`1 3`), quicksand (`Q`),
 pulse walls that swap with every shot (`M R`, the lowered set drawn as a pulsing outline),

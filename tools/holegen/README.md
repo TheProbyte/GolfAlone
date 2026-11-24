@@ -16,5 +16,11 @@ cd tools/holegen && python3 select_emit.py [theme ...]   # writes app/.../game/<
   matches the physics.
 - `select_emit.py` keeps holes the bot finishes in 2-4 (par = best + 1), where the drawn coast
   matches physics, and where a gap really needs its helper (the twin can't do it as well). It
-  picks nine per course: hole 1 teaches the course's mechanic alone, then a mix of par 3s, 4s and
+  picks nine per course: hole 1 brings in the course's mechanic with no other challenge, then a mix of par 3s, 4s and
   5s, favouring holes with more going on.
+
+**The committed `.kt` course files are the source of truth.** `select_emit.py` overwrites them.
+The shipped courses came from a run before the theme seed was made stable (it used Python's
+per-process `hash()`), so the candidate ids in their comments name that run, and a rerun now
+gives a different (but repeatable) batch. Don't regenerate a shipped course unless you mean to
+replace it.
