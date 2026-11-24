@@ -35,7 +35,7 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     val wf = ((time * WATER_FPS).toInt()) % Terrain.FRAMES
     // The open sea beyond the map: the same water, tiled in world coordinates so it meets
     // the map's own open water without a seam.
-    val sea = Terrain.sea[wf]
+    val sea = Terrain.sea(hole.style)[wf]
     var sy = Math.floorDiv(iy, Terrain.SEA_H) * Terrain.SEA_H
     while (sy < iy + lh + 1) {
         var sx = Math.floorDiv(ix, Terrain.SEA_W) * Terrain.SEA_W
@@ -103,8 +103,10 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     while (k < posts.size) {
         val bx = posts[k].roundToInt() - ix
         val by = posts[k + 1].roundToInt() - iy
-        Sprites.palmShadow(c, bx, by, Sprites.palmSway(time, k))
-        Sprites.palmTrunk(c, bx, by)
+        when (hole.style) {
+            "desert" -> Bodies.cactus(c, bx, by)
+            else -> { Sprites.palmShadow(c, bx, by, Sprites.palmSway(time, k)); Sprites.palmTrunk(c, bx, by) }
+        }
         k += 2
     }
 
@@ -143,7 +145,11 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     while (k < posts.size) {
         val bx = posts[k].roundToInt() - ix
         val by = posts[k + 1].roundToInt() - iy
-        Sprites.palmCanopy(c, bx, by, Sprites.palmSway(time, k))
+        when (hole.style) {
+            "desert" -> {}
+            "autumn" -> Bodies.autumnCanopy(c, bx, by, Sprites.palmSway(time, k))
+            else -> Sprites.palmCanopy(c, bx, by, Sprites.palmSway(time, k))
+        }
         if (sinkT < 0f && Sprites.underCanopy(physics.x, physics.y, posts[k], posts[k + 1])) under = true
         k += 2
     }

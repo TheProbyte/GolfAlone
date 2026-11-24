@@ -43,14 +43,14 @@ class Ambient {
         this.theme = theme
         w = t.w
         mapH = t.h
-        herons = if (theme == "marsh") pick(t.beachSpots + t.pondSpots, 2, 15) else IntArray(0)
-        fireflies = if (theme == "light") pick(t.flowerSpots + t.beachSpots, 6, 16) else IntArray(0)
-        fishes = if (theme == "lagoon") pick(t.shallowSpots, 4, 17) else IntArray(0)
+        herons = if (theme == "marsh" || theme == "mangrove") pick(t.beachSpots + t.pondSpots, 2, 15) else IntArray(0)
+        fireflies = if (theme in setOf("light", "mushroom", "crystal", "starfall", "mangrove")) pick(t.flowerSpots + t.beachSpots + t.grassSpots, 6, 16) else IntArray(0)
+        fishes = if (theme == "lagoon" || theme == "zen") pick(t.shallowSpots, 4, 17) else IntArray(0)
         seals = if (theme == "frost") pick(t.beachSpots, 2, 20) else IntArray(0)
-        sheep = if (theme == "bluff") pick(t.grassSpots, 3, 21) else IntArray(0)
-        crabs = if (theme in setOf("cove", "lagoon", "wreck", "marsh")) pick(t.beachSpots, 2, 11) else IntArray(0)
-        flies = if (theme == "cove" || theme == "lagoon" || theme == "temple") pick(t.flowerSpots, 2, 12) else IntArray(0)
-        fish = if (theme == "frost" || theme == "ember") IntArray(0) else pick(t.pondSpots, 2, 13)
+        sheep = if (theme == "bluff" || theme == "autumn") pick(t.grassSpots, 3, 21) else IntArray(0)
+        crabs = if (theme in setOf("cove", "lagoon", "wreck", "marsh", "oasis", "carnival")) pick(t.beachSpots, 2, 11) else IntArray(0)
+        flies = if (theme in setOf("cove", "lagoon", "temple", "zen", "oasis", "sky")) pick(t.flowerSpots, 2, 12) else IntArray(0)
+        fish = if (theme in setOf("frost", "ember", "sky", "crystal")) IntArray(0) else pick(t.pondSpots, 2, 13)
         perch = pick(t.wallTopSpots, 1, 14).firstOrNull() ?: -1
         flewAt = -1f
         gone = false
@@ -232,6 +232,32 @@ class Ambient {
                 val y = ((h2 * (lh + 20) + t * 22f * (0.6f + h1)) % (lh + 20)).toInt() - 10
                 px(c, x, y, Palette.alpha(0xFFFFFFFF.toInt(), 200))
                 if (k % 4 == 0) px(c, x + 1, y, Palette.alpha(0xFFFFFFFF.toInt(), 110))
+            }
+            return
+        }
+        if (theme == "autumn" || theme == "zen") {
+            // Leaves (autumn) or blossom petals (the zen garden) drifting down and across.
+            val cols = if (theme == "autumn") intArrayOf(0xFFD8702A.toInt(), 0xFFB83A2A.toInt(), 0xFFE8A040.toInt()) else intArrayOf(0xFFF5C0D8.toInt(), 0xFFFFE0F0.toInt())
+            for (k in 0 until 16) {
+                val h1 = Terrain.hash(k, 7, 19)
+                val h2 = Terrain.hash(k, 8, 19)
+                val x = ((h1 * (lw + 20) + t * 9f + sin(t * 1.3f + k) * 6f).toInt() % (lw + 20)) - 10
+                val y = ((h2 * (lh + 20) + t * 14f * (0.6f + h1)) % (lh + 20)).toInt() - 10
+                val col = cols[k % cols.size]
+                px(c, x, y, col)
+                if (((t * 6f).toInt() + k) % 2 == 0) px(c, x + 1, y, col)
+            }
+            return
+        }
+        if (theme == "starfall") {
+            // Now and then a shooting star.
+            val period = 5f
+            val run = (t / period).toInt()
+            val ph = t % period
+            if (ph < 0.6f) {
+                val sx = (Terrain.hash(run, 9, 19) * lw).toInt()
+                val sy = (Terrain.hash(run, 10, 19) * lh * 0.6f).toInt()
+                for (s in 0 until 6) px(c, sx + (ph * 90f).toInt() - s * 2, sy + (ph * 45f).toInt() - s, Palette.alpha(0xFFFFFFFF.toInt(), 230 - s * 35))
             }
             return
         }

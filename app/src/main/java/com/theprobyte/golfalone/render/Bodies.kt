@@ -27,6 +27,10 @@ object Bodies {
     private val CORAL_DARK = 0xFFA84858.toInt()
     private val LAMP = 0xFFFFE6A0.toInt()
     private val LOBES = intArrayOf(-2, 0, 1, -1, 0, 2, 2, 1)
+    private val PORTAL_A = 0xFF5FD8E8.toInt()
+    private val PORTAL_B = 0xFFE868D0.toInt()
+    private val PULSE_A = 0xFFE8803A.toInt()
+    private val PULSE_B = 0xFF3AB8A8.toInt()
     private val shadow get() = Palette.alpha(Palette.INK_SHADOW, 90)
 
     /** Shadows and ground-level bodies, drawn under the ball. */
@@ -51,6 +55,63 @@ object Bodies {
                 val col = Palette.alpha(Palette.SEA[5], 210)
                 px(c, x, y, col)
                 px(c, x - t.flowX.toInt(), y - t.flowY.toInt(), Palette.alpha(Palette.SEA[5], 120))
+            }
+        }
+
+        // Portals: swirling rings, each pair its own colour.
+        for (i in hole.tilesOf(Tile.PORTAL)) {
+            val x = (i % hole.w) * TILE + 4 - ix
+            val y = (i / hole.w) * TILE + 4 - iy
+            val col = if (hole.portalOf[i] == 0) PORTAL_A else PORTAL_B
+            Pix.ring(c, x - 0.5f, y - 0.5f, 3.5f, col)
+            Pix.ring(c, x - 0.5f, y - 0.5f, 2f, Palette.alpha(col, 140))
+            for (s in 0 until 3) {
+                val a = time * 3f + s * 2.094f
+                px(c, (x + cos(a) * 2.5f).roundToInt(), (y + sin(a) * 2.5f).roundToInt(), Palette.PAPER[3])
+            }
+        }
+        // Quicksand: a slow swirl turning in to the middle of each patch.
+        for (i in hole.tilesOf(Tile.QUICKSAND)) {
+            if (Terrain.hash(i, 0, 108) > 0.5f) continue
+            val cx = hole.quickX[i] - ix
+            val cy = hole.quickY[i] - iy
+            val tx = (i % hole.w) * TILE + 4f - ix
+            val ty = (i / hole.w) * TILE + 4f - iy
+            val r = kotlin.math.hypot(tx - cx, ty - cy) * (1f - (time * 0.25f + Terrain.hash(i, 1, 108)) % 1f) + 1f
+            val a = kotlin.math.atan2(ty - cy, tx - cx) + time * 0.8f
+            px(c, (cx + cos(a) * r).roundToInt(), (cy + sin(a) * r).roundToInt(), Palette.SANDS[1])
+        }
+        // Gravity wells: sparks falling in.
+        var wk = 0
+        while (wk < hole.wells.size) {
+            val cx = hole.wells[wk] - ix
+            val cy = hole.wells[wk + 1] - iy
+            for (s in 0 until 4) {
+                val ph = (time * 0.5f + s * 0.25f) % 1f
+                val r = 14f * (1f - ph) + 1f
+                val a = s * 1.571f + ph * 4f
+                px(c, (cx + cos(a) * r).roundToInt(), (cy + sin(a) * r).roundToInt(), Palette.alpha(Palette.PAPER[3], (220 * ph).toInt() + 30))
+            }
+            wk += 2
+        }
+        // Pulse walls: up, a coloured block; down, an outline pulsing (it rises after this shot).
+        for (t in arrayOf(Tile.PULSE_A, Tile.PULSE_B)) {
+            val col = if (t == Tile.PULSE_A) PULSE_A else PULSE_B
+            val up = st.pulseUp(t)
+            for (i in hole.tilesOf(t)) {
+                val x = (i % hole.w) * TILE - ix
+                val y = (i / hole.w) * TILE - iy
+                if (up) {
+                    rect(c, x + 1, y + 6, TILE, 2, shadow)
+                    rect(c, x, y, TILE, 5, Palette.lerp(col, Palette.PAPER[3], 0.25f))
+                    rect(c, x, y + 5, TILE, 3, Palette.darker(col))
+                    rect(c, x, y, TILE, 1, Palette.PAPER[3])
+                } else {
+                    val a = (150 + 90 * sin(time * 4f)).toInt().coerceIn(0, 255)
+                    val oc = Palette.alpha(col, a)
+                    rect(c, x, y, TILE, 1, oc); rect(c, x, y + TILE - 1, TILE, 1, oc)
+                    rect(c, x, y, 1, TILE, oc); rect(c, x + TILE - 1, y, 1, TILE, oc)
+                }
             }
         }
 
@@ -158,7 +219,11 @@ object Bodies {
             val bx = hole.buoys[k]
             val by = hole.buoys[k + 1]
             val hit = bumpT in 0f..0.15f && kotlin.math.hypot(bx - bumpX, by - bumpY) < 9f
-            buoy(c, bx.roundToInt() - ix, by.roundToInt() - iy, hit)
+            when (hole.style) {
+                "mushroom" -> mushroom(c, bx.roundToInt() - ix, by.roundToInt() - iy, hit)
+                "carnival", "clock" -> bumper(c, bx.roundToInt() - ix, by.roundToInt() - iy, hit, k)
+                else -> buoy(c, bx.roundToInt() - ix, by.roundToInt() - iy, hit)
+            }
             k += 2
         }
         for (i in hole.crabs.indices) {
@@ -221,6 +286,46 @@ object Bodies {
         }
         px(c, x - 1, y - 2, Palette.PAPER[3]); px(c, x - 2, y - 1, Palette.PAPER[3])
         px(c, x, y - 4, Palette.STONES[3]) // the bell's ring
+    }
+
+    /** A big springy mushroom (the hollow's bumper). */
+    private fun mushroom(c: Canvas, x: Int, y: Int, hit: Boolean) {
+        Pix.oval(c, x + 1.5f, y + 2.5f, 4f, 2f, shadow)
+        rect(c, x - 1, y, 3, 3, Palette.PAPER[2])
+        val r = if (hit) 5f else 4.2f
+        Pix.oval(c, x + 0.5f, y - 0.5f, r, r * 0.7f, 0xFFB050C0.toInt())
+        Pix.oval(c, x + 0.5f, y - 1.5f, r - 1.2f, r * 0.45f, 0xFFD878E0.toInt())
+        px(c, x - 2, y - 2, Palette.PAPER[3]); px(c, x + 2, y - 1, Palette.PAPER[3]); px(c, x, y - 3, Palette.PAPER[3])
+    }
+
+    /** A pinball bumper: a coloured ring with a lit cap. */
+    private fun bumper(c: Canvas, x: Int, y: Int, hit: Boolean, seed: Int) {
+        Pix.oval(c, x + 1.5f, y + 2.5f, 4f, 2f, shadow)
+        val col = when (seed / 2 % 3) { 0 -> Palette.FLAG; 1 -> Palette.SEA[3]; else -> Palette.GOLD }
+        Pix.oval(c, x + 0.5f, y + 0.5f, if (hit) 4.6f else 4f, if (hit) 4.6f else 4f, Palette.darker(col))
+        Pix.oval(c, x + 0.5f, y + 0.5f, 3f, 3f, if (hit) Palette.PAPER[3] else col)
+        Pix.oval(c, x + 0.5f, y - 0.5f, 1.5f, 1.2f, Palette.PAPER[3])
+    }
+
+    /** A cactus (the oasis's palm): a ribbed column with two arms. */
+    fun cactus(c: Canvas, x: Int, y: Int) {
+        Pix.oval(c, x + 3f, y + 2f, 4f, 1.6f, shadow)
+        val g = Palette.GRASS[3]
+        val d = Palette.GRASS[1]
+        rect(c, x - 1, y - 11, 3, 13, g)
+        rect(c, x + 1, y - 11, 1, 13, d)
+        rect(c, x - 4, y - 7, 2, 4, g); rect(c, x - 4, y - 4, 3, 1, g)
+        rect(c, x + 3, y - 9, 2, 4, g); rect(c, x + 2, y - 6, 3, 1, d)
+        px(c, x, y - 12, 0xFFF29AC0.toInt()) // a flower on top
+    }
+
+    /** An autumn tree's crown: a round mass of orange and red leaves. */
+    fun autumnCanopy(c: Canvas, x: Int, y: Int, sway: Int) {
+        val cx = x + sway
+        Pix.oval(c, cx + 0.5f, y - 9.5f, 7f, 5.5f, 0xFF8A3A1A.toInt())
+        Pix.oval(c, cx - 0.5f, y - 10.5f, 6f, 4.5f, 0xFFD8702A.toInt())
+        Pix.oval(c, cx - 1.5f, y - 11.5f, 3.5f, 2.5f, 0xFFF0A040.toInt())
+        px(c, cx + 3, y - 8, 0xFFB83A2A.toInt()); px(c, cx - 4, y - 9, 0xFFB83A2A.toInt())
     }
 
     private fun footprints(c: Canvas, x: Int, y: Int) {

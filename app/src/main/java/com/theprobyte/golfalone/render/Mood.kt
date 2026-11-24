@@ -22,7 +22,17 @@ enum class Mood(val hi: Int, val lo: Int, val amtHi: Float, val amtLo: Float) {
     /** A cold morning: icy white light, blue shade. */
     COLD(0xFFE8F4FF.toInt(), 0xFF2A3A60.toInt(), 0.15f, 0.25f),
     /** Jungle light: warm gold through the leaves, deep green shade. */
-    JUNGLE(0xFFFFE9A0.toInt(), 0xFF0E3A2A.toInt(), 0.14f, 0.25f);
+    JUNGLE(0xFFFFE9A0.toInt(), 0xFF0E3A2A.toInt(), 0.14f, 0.25f),
+    DESERT(0xFFFFE0A0.toInt(), 0xFF6A3A20.toInt(), 0.18f, 0.2f),
+    TWILIGHT(0xFFE0C8FF.toInt(), 0xFF241838.toInt(), 0.15f, 0.3f),
+    EVENING(0xFFFFC890.toInt(), 0xFF2A2050.toInt(), 0.15f, 0.28f),
+    SKY(0xFFF0F8FF.toInt(), 0xFF3A6AA0.toInt(), 0.12f, 0.18f),
+    BRONZE(0xFFFFD8A0.toInt(), 0xFF3A2A30.toInt(), 0.16f, 0.28f),
+    SWAMP(0xFFE8F0B0.toInt(), 0xFF1A3028.toInt(), 0.12f, 0.3f),
+    CAVE(0xFFC0F0FF.toInt(), 0xFF140A28.toInt(), 0.15f, 0.35f),
+    AUTUMN(0xFFFFC070.toInt(), 0xFF3A2030.toInt(), 0.2f, 0.25f),
+    SAKURA(0xFFFFE0F0.toInt(), 0xFF304050.toInt(), 0.12f, 0.2f),
+    STARRY(0xFFB0C8FF.toInt(), 0xFF080C28.toInt(), 0.15f, 0.4f);
 
     /** One colour through this mood: weighted by its brightness towards [hi], or towards [lo]. */
     fun grade(c: Int): Int {

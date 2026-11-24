@@ -957,6 +957,24 @@ class GameView(
     override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) {
         strokes++ // penalty
         shotLive = false
+        val fell = hole.style == "sky" && hole.at(x, y).water
+        val swallowed = hole.at(x, y) == Tile.QUICKSAND
+        if (fell || swallowed) {
+            // Off the edge of a sky island, or down into quicksand: a puff and a stroke.
+            if (fell) sfx.whoosh() else sfx.sand(pan(x))
+            haptics.splash(this)
+            repeat(12) {
+                val a = rnd.nextFloat() * 2f * PI.toFloat()
+                val s = 12f + rnd.nextFloat() * 30f
+                spawn(x, y, cos(a) * s, sin(a) * s, 0.5f + rnd.nextFloat() * 0.3f, if (fell) Palette.PAPER[3] else Palette.SANDS[2])
+            }
+            say(if (fell) "+1 FELL" else "+1 SWALLOWED", x, y - 8f, Palette.INK)
+            popT = 0f
+            sfx.pop(pan(dropX))
+            ring(dropX, dropY, 0.5f, 6f, Palette.INK)
+            for (i in 0 until tn) tAt[i] = -9f
+            return
+        }
         if (hole.at(x, y) == Tile.LAVA) {
             // Lava: a sizzle and a burst of embers instead of a splash.
             sfx.sizzle(pan(x))
@@ -1030,6 +1048,24 @@ class GameView(
     override fun onCrack(x: Float, y: Float) {
         sfx.icePing(pan(x))
         repeat(3) { spawn(x, y, rnd.nextFloat() * 20f - 10f, rnd.nextFloat() * 20f - 10f, 0.3f, Palette.PAPER[3]) }
+    }
+
+    override fun onKick(x: Float, y: Float) {
+        sfx.boing(pan(x))
+        haptics.tap(this)
+        ring(x, y, 0.3f, 6f, Palette.GOLD)
+    }
+
+    override fun onBoost(x: Float, y: Float) {
+        sfx.zip(pan(x))
+        repeat(5) { spawn(x, y, rnd.nextFloat() * 20f - 10f, rnd.nextFloat() * 20f - 10f, 0.3f, Palette.GOLD) }
+    }
+
+    override fun onPortal(x0: Float, y0: Float, x1: Float, y1: Float) {
+        sfx.warp(pan(x1))
+        haptics.tap(this)
+        ring(x0, y0, 0.4f, 7f, 0xFF5FD8E8.toInt())
+        ring(x1, y1, 0.4f, 7f, 0xFFE868D0.toInt())
     }
 
     override fun onTunnel(x0: Float, y0: Float, x1: Float, y1: Float) {

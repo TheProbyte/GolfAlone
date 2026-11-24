@@ -143,6 +143,12 @@ class Sfx(context: Context) {
                 for (k in 0 until 2 + (roll * 3).toInt()) it.glass(Synth.midiToHz(n + (k % 2) * 3f), 0.1f * v, pan, delayMs = k * 90f)
             }
             "bluff" -> play { it.sweep(0.2f * v, pan, 1800f, 300f, 700f, q = 0.5f) }
+            "mangrove" -> play { val f = 80f + roll * 50f; it.tok(f, 0.2f * v, pan); it.tok(f * 1.2f, 0.16f * v, pan, delayMs = 130f) }
+            "mushroom", "crystal", "starfall" -> play { for (k in 0 until 3) it.glass(Synth.midiToHz(96f + roll * 6f + k * 3f), 0.06f * v, pan, delayMs = k * 110f) }
+            "autumn", "zen", "oasis" -> play { it.sweep(0.12f * v, pan, 1800f, 400f, 800f, q = 0.5f) }
+            "sky" -> play { it.sweep(0.2f * v, pan, 2000f, 300f, 600f, q = 0.5f) }
+            "clock" -> play { for (k in 0 until 4) it.click(0.12f * v, pan) }
+            "carnival" -> play { it.mallet(Synth.midiToHz(72f + (roll * 5).toInt() * 2f), 0.12f * v, pan) }
             "wreck" -> play {
                 it.sweep(0.16f * v, pan, 2400f, 3000f, 2000f, q = 0.5f)
                 if (roll < 0.12f) it.sweep(0.3f * v, 0f, 2600f, 90f, 40f, q = 0.7f, delayMs = 300f) // thunder
@@ -213,6 +219,22 @@ class Sfx(context: Context) {
     fun sizzle(pan: Float) = play {
         it.sweep(0.5f, pan, 700f, 6000f, 2500f, q = 0.5f)
         it.tok(80f, 0.4f, pan)
+    }
+
+    /** A kicker pad: a springy boing. */
+    fun boing(pan: Float) = play {
+        it.tok(220f, 0.5f, pan)
+        it.sweep(0.3f, pan, 220f, 300f, 1200f, q = 2.2f)
+    }
+
+    /** A boost pad: a rising zip. */
+    fun zip(pan: Float) = play { it.sweep(0.3f, pan, 180f, 600f, 3200f, q = 1.4f) }
+
+    /** Through a portal: a shimmering warp. */
+    fun warp(pan: Float) = play {
+        it.glass(Synth.midiToHz(86f), 0.35f, pan)
+        it.glass(Synth.midiToHz(91f), 0.3f, pan, delayMs = 60f)
+        it.sweep(0.2f, pan, 300f, 2400f, 800f, q = 1.8f)
     }
 
     /** A crab's scuttle. */
