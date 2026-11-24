@@ -40,6 +40,12 @@ interface PhysicsEvents {
     fun onCrack(x: Float, y: Float) {}
     /** Into a tunnel's mouth at ([x0], [y0]) and out at ([x1], [y1]). */
     fun onTunnel(x0: Float, y0: Float, x1: Float, y1: Float) {}
+    /** Thrown by a kicker pad. */
+    fun onKick(x: Float, y: Float) {}
+    /** Sped up by a boost pad. */
+    fun onBoost(x: Float, y: Float) {}
+    /** Through a portal from ([x0], [y0]) to ([x1], [y1]). */
+    fun onPortal(x0: Float, y0: Float, x1: Float, y1: Float) {}
 
     object None : PhysicsEvents
 }
@@ -74,6 +80,8 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
     private var kicks = 0
     /** The vent tile that last threw the ball (so it doesn't throw it again as it lands), or -1. */
     private var ventFrom = -1
+    /** Portal trips this shot (capped, so a loop can't run forever). */
+    private var warps = 0
 
     /** The ball's part of the shot is over; the shot ends once nothing else is moving. */
     private fun endBall() {
@@ -102,6 +110,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         moving = true
         ballStill = false
         kicks = 0
+        warps = 0
         ventFrom = -1
         lipped = false
         shotTime = 0f
@@ -159,6 +168,26 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         // A ledge's lip tips the ball over; the wind leans on it up on the ridges.
         if (tile.isLedge) { vx += tile.dropX * LEDGE_G * dt; vy += tile.dropY * LEDGE_G * dt }
         if (tile.windy) { vx += hole.windX * WIND_G * dt; vy += hole.windY * WIND_G * dt }
+        // Quicksand pulls towards the middle of its patch.
+        if (tile == Tile.QUICKSAND) {
+            val ti = floor(y / TILE).toInt() * hole.w + floor(x / TILE).toInt()
+            val qx = hole.quickX[ti] - x
+            val qy = hole.quickY[ti] - y
+            val ql = hypot(qx, qy)
+            if (ql > 0.5f) { vx += qx / ql * QUICK_PULL * dt; vy += qy / ql * QUICK_PULL * dt }
+        }
+        // Gravity wells pull from a few tiles away, harder as you get closer (but not at the very middle).
+        var wi = 0
+        while (wi < hole.wells.size) {
+            val gx = hole.wells[wi] - x
+            val gy = hole.wells[wi + 1] - y
+            val gd = hypot(gx, gy)
+            if (gd < WELL_R && gd > 0.5f) {
+                val pull = WELL_G * (1f - gd / WELL_R) * min(1f, gd / 4f)
+                vx += gx / gd * pull * dt; vy += gy / gd * pull * dt
+            }
+            wi += 2
+        }
         // A current draws the ball towards its own drift.
         if (tile.flows) {
             vx += (tile.flowX * CURRENT_V - vx) * CURRENT_K * dt
@@ -270,7 +299,18 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         val slopePush = SLOPE_G * hypot(tile.slopeX, tile.slopeY) + RAMP_G * hypot(tile.rampX, tile.rampY) +
             (if (tile.isLedge) LEDGE_G else 0f) + (if (tile.windy) WIND_G else 0f)
         if ((sp < STOP_SPEED && (slopePush < c || touchedWall) && !tile.flows) || shotTime > MAX_ROLL_S) {
-            vx = 0f; vy = 0f; endBall()
+            vx = 0f; vy = 0f
+            if (tile == Tile.QUICKSAND) {
+                // Stopped in quicksand: it's swallowed, a stroke, and dropped back where it went in.
+                val (dx, dy) = dropPoint()
+                ev.onSplash(x, y, dx, dy)
+                x = dx; y = dy
+                restX = x; restY = y
+                endBall()
+                lastTile = hole.at(x, y)
+                return
+            }
+            endBall()
             restX = x; restY = y
             ev.onStop(x, y)
         }
@@ -306,6 +346,34 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
                 return true
             }
             Tile.SNOW -> { vx *= SNOW_PLUG; vy *= SNOW_PLUG; if (speed > 5f) ev.onSand(x, y, speed) }
+            Tile.KICK_N, Tile.KICK_S, Tile.KICK_E, Tile.KICK_W -> if (kicks < MAX_KICKS) {
+                kicks++
+                vx = now.kickX * KICK_V; vy = now.kickY * KICK_V
+                vz = KICK_LIFT; z = LAUNCH_Z
+                lastTile = now
+                ev.onKick(x, y)
+                return true
+            }
+            Tile.BOOST -> {
+                val sp = speed
+                if (sp > 1e-3f && sp < BOOST_V) { vx = vx / sp * BOOST_V; vy = vy / sp * BOOST_V }
+                ev.onBoost(x, y)
+            }
+            Tile.PORTAL -> if (warps < MAX_WARPS) {
+                val k = hole.portalOf[idx]
+                // Out of the other end, a little past its middle, still going the same way.
+                val other = if (floor(hole.portalX[k][0] / TILE).toInt() == tx && floor(hole.portalY[k][0] / TILE).toInt() == ty) 1 else 0
+                val sp = max(speed, 1e-3f)
+                val x0 = x
+                val y0 = y
+                x = hole.portalX[k][other] + vx / sp * 1.5f
+                y = hole.portalY[k][other] + vy / sp * 1.5f
+                warps++
+                lastDryX = x; lastDryY = y; entryVx = vx; entryVy = vy
+                lastTile = Tile.PORTAL
+                ev.onPortal(x0, y0, x, y)
+                return true
+            }
             else -> {}
         }
         if (!now.vent) ventFrom = -1
@@ -363,12 +431,14 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             val py = lastDryY - uy * k
             val t = hole.at(px, py)
             if (coast.landDepth(px, py) >= BALL_R + 1f && !t.solid && !t.isRamp && !t.flows && !t.vent && !t.isLedge &&
+                t != Tile.QUICKSAND && !t.isKicker && t != Tile.PORTAL && t != Tile.BOOST &&
                 !nearOpenIce(px, py) && clearOfPosts(px, py)) return px to py
             k += 1f
         }
         // A current carried it in (no dry ground along its path), or its last dry spot is over
         // open ice: back to where the shot was played.
-        if (hole.at(lastDryX, lastDryY).flows || nearOpenIce(lastDryX, lastDryY)) return restX to restY
+        val ld = hole.at(lastDryX, lastDryY)
+        if (ld.flows || ld == Tile.QUICKSAND || ld == Tile.PORTAL || nearOpenIce(lastDryX, lastDryY)) return restX to restY
         return if (coast.isLand(lastDryX, lastDryY)) lastDryX to lastDryY else restX to restY
     }
 
@@ -380,6 +450,13 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             i += 2
         }
         return clearOfBodies(px, py, 0.5f)
+    }
+
+    /** Whether a raised pulse wall is under any part of a ball at ([px], [py]). */
+    private fun underPulse(px: Float, py: Float): Boolean {
+        val r = BALL_R
+        fun up(qx: Float, qy: Float): Boolean { val t = hole.at(qx, qy); return t.isPulse && state.pulseUp(t) }
+        return up(px, py) || up(px + r, py) || up(px - r, py) || up(px, py + r) || up(px, py - r)
     }
 
     /** Whether open thin ice is under any part of a ball at ([px], [py]). */
@@ -484,6 +561,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         else if (t == Tile.HULL) h = WALL_H
         else if (t == Tile.PLANK && !state.plankBroken(tx, ty)) h = WOOD_H
         else if (t == Tile.GATE && !state.gateOpen(tx, ty)) h = WALL_H
+        else if (t.isPulse && state.pulseUp(t)) h = WALL_H
         val rails = hole.rails
         for (i in rails.near(tx, ty)) {
             if (rails.distance(i, px, py) < rails.r[i]) {
@@ -504,6 +582,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         if (t == Tile.WALL && !hole.rails.isBoulder(tx, ty)) return true
         if (t == Tile.HULL || (t == Tile.PLANK && !state.plankBroken(tx, ty))) return true
         if (t == Tile.GATE && !state.gateOpen(tx, ty)) return true
+        if (t.isPulse && state.pulseUp(t)) return true
         if (!clearOfBodies(px, py, 0.5f - BALL_R)) return true
         val rails = hole.rails
         for (i in rails.near(tx, ty)) if (rails.distance(i, px, py) < rails.r[i] + 0.5f) return true
@@ -530,6 +609,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             if (!tt.solid || tt == Tile.WOOD || rails.isBoulder(tx, ty) || height >= WALL_H) continue
             if (tt == Tile.PLANK) { if (height < WOOD_H) hitPlank(tx, ty, ev); continue }
             if (tt == Tile.GATE && state.gateOpen(tx, ty)) continue
+            if (tt.isPulse && !state.pulseUp(tt)) continue
             val left = (tx * TILE).toFloat()
             val top = (ty * TILE).toFloat()
             val px = min(max(x, left), left + TILE)
@@ -819,6 +899,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             if (!tt.solid || tt == Tile.WOOD || hole.rails.isBoulder(tx, ty)) continue
             if (tt == Tile.PLANK && st.plankBroken(tx, ty)) continue
             if (tt == Tile.GATE && st.gateOpen(tx, ty)) continue
+            if (tt.isPulse && !st.pulseUp(tt)) continue
             val left = (tx * TILE).toFloat()
             val top = (ty * TILE).toFloat()
             val px = min(max(st.bx[i], left), left + TILE)
@@ -896,8 +977,8 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         if (inCup) return false
         state.advance(x, y)
         val coast = state.coast
-        // Only water moves the ball (resting against a barrel or buoy is fine).
-        if (coast.waterDepth(x, y) <= 0f && !nearOpenIce(x, y)) return false
+        // Only water (or a pulse wall rising under it) moves the ball; resting against a barrel or buoy is fine.
+        if (coast.waterDepth(x, y) <= 0f && !nearOpenIce(x, y) && !underPulse(x, y)) return false
         // Search outward for dry, clear ground, as far as it takes.
         var r = 1f
         val far = hypot(hole.pxW.toFloat(), hole.pxH.toFloat())
@@ -913,6 +994,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
                 val t = hole.at(px, py)
                 val dry = coast.landDepth(px, py)
                 if (dry >= BALL_R + 1f && !t.solid && !t.isRamp && !t.flows && !t.vent && !t.isLedge && !nearOpenIce(px, py) &&
+                    !underPulse(px, py) && t != Tile.QUICKSAND && !t.isKicker && t != Tile.PORTAL &&
                     !(t == Tile.GATE && !state.gateOpen(floor(px / TILE).toInt(), floor(py / TILE).toInt())) && clearOfPosts(px, py) && dry > best) { best = dry; bx = px; by = py }
             }
             if (best > 0f) { placeAt(bx, by); return true }
@@ -932,7 +1014,7 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
     fun copyFrom(o: Physics) {
         x = o.x; y = o.y; vx = o.vx; vy = o.vy; restX = o.restX; restY = o.restY; z = o.z; vz = o.vz
         moving = o.moving; inCup = o.inCup; lipped = false; shotTime = o.shotTime; lastTile = hole.at(x, y)
-        ballStill = o.ballStill; kicks = o.kicks; ventFrom = o.ventFrom
+        ballStill = o.ballStill; kicks = o.kicks; ventFrom = o.ventFrom; warps = o.warps
         if (state !== o.state) state.copyFrom(o.state)
     }
 
@@ -1022,6 +1104,15 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
         const val MILL_BLADE_R = 1.5f
         const val MILL_E = 0.5f
         const val MILL_H = 12f
+        /** Kicker pads: the speed and lift they throw with. Boost pads: the least speed they send on. */
+        const val KICK_V = 120f
+        const val KICK_LIFT = 90f
+        const val BOOST_V = 320f
+        const val MAX_WARPS = 6
+        /** Quicksand's pull, and gravity wells' reach (px) and strength. */
+        const val QUICK_PULL = 90f
+        const val WELL_R = 30f
+        const val WELL_G = 260f
 
         /** The softest tap still rolls the ball a few pixels. */
         const val MIN_SPEED = 22f

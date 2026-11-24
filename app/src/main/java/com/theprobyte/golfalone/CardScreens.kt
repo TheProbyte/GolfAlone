@@ -83,7 +83,7 @@ internal fun GameView.drawCard(c: Canvas) {
     var y = st + 68
     if (courseRun) {
         // The round so far.
-        val bw = 22
+        val bw = min(22, (lw - 8 - 2 * (n - 1)) / n) // narrower boxes on a nine-hole course
         val sx = lw / 2 - (n * (bw + 2) - 2) / 2
         for (i in 0 until n) {
             val bx = sx + i * (bw + 2)
@@ -123,9 +123,9 @@ internal fun GameView.drawFinal(c: Canvas) {
     val total = scores.sum()
     val d = total - course.par
 
-    // Table: label column, six holes, total, on ruled paper.
+    // Table: label column, a column per hole (narrower on longer courses), total, on ruled paper.
     val lx = 8
-    val cw = 20
+    val cw = min(20, (lw - 32 - 28) / n)
     val cx0 = 32
     var ry = st + 38
     Pix.ruled(c, 4, ry + 7, lw - 8, 30, 10)

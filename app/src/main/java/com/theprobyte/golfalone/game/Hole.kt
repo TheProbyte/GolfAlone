@@ -33,6 +33,9 @@ enum class Tile(
     val vent: Boolean = false,
     /** An exposed ridge: the hole's wind pushes the ball here. */
     val windy: Boolean = false,
+    /** A kicker pad's direction: it throws the ball that way with a hop, or 0. */
+    val kickX: Float = 0f,
+    val kickY: Float = 0f,
 ) {
     WATER(water = true),
     WALL(solid = true),
@@ -88,13 +91,30 @@ enum class Tile(
     LEDGE_E(c = 40f, k = 1.2f, dropX = 1f),
     LEDGE_W(c = 40f, k = 1.2f, dropX = -1f),
     /** Exposed grass on a ridge, in the wind. */
-    RIDGE(c = 40f, k = 1.2f, windy = true);
+    RIDGE(c = 40f, k = 1.2f, windy = true),
+    KICK_N(c = 36f, k = 1f, kickY = -1f),
+    KICK_S(c = 36f, k = 1f, kickY = 1f),
+    KICK_E(c = 36f, k = 1f, kickX = 1f),
+    KICK_W(c = 36f, k = 1f, kickX = -1f),
+    /** A boost pad: the ball leaves it fast, the way it was going. */
+    BOOST(c = 30f, k = 1f),
+    /** A portal: in one, out of its twin, still rolling the same way. */
+    PORTAL(c = 36f, k = 1f),
+    /** Quicksand: it drags and pulls to its middle, and swallows a ball that stops in it. */
+    QUICKSAND(c = 160f, k = 3f),
+    /** Pulse walls: set A is up on even shots, set B on odd ones (each is floor when down). */
+    PULSE_A(solid = true, e = 0.6f),
+    PULSE_B(solid = true, e = 0.6f),
+    /** A gravity well: it pulls the ball towards its middle from a few tiles away. */
+    WELL(c = 40f, k = 1.2f);
 
     val isGreen get() = this == GREEN || slopeX != 0f || slopeY != 0f
     val isRamp get() = rampX != 0f || rampY != 0f
     val isLand get() = !water
     val flows get() = flowX != 0f || flowY != 0f
     val isLedge get() = dropX != 0f || dropY != 0f
+    val isKicker get() = kickX != 0f || kickY != 0f
+    val isPulse get() = this == PULSE_A || this == PULSE_B
     /** Made of wood (for sounds): driftwood, hull and planks. */
     val wooden get() = this == WOOD || this == HULL || this == PLANK
 }
@@ -151,6 +171,9 @@ class Crab(vararg waypoints: Pair<Int, Int>) {
  * `p` / `q` switch plates for gates `G` / `J` (`u` a plate that opens nothing), `(` and `[`
  * tunnel mouths coming out at `)` and `]`, `r` vines, `A U F Z` ledges dropping north, south,
  * east or west, and `;` a windswept ridge.
+ *
+ * And: `Y y X K` kicker pads throwing north, south, east or west, `B` a boost pad, `1` and `3`
+ * portal pairs, `Q` quicksand, `M` / `R` pulse walls (up on even / odd shots), `@` a gravity well.
  */
 class Hole(
     val name: String,
@@ -200,6 +223,15 @@ class Hole(
     val exitY = FloatArray(2)
     val exitDX = FloatArray(2)
     val exitDY = FloatArray(2)
+    /** Portals: for each tile, which pair it belongs to (or -1), and each pair's two ends (px). */
+    val portalOf: IntArray
+    val portalX = Array(2) { FloatArray(2) }
+    val portalY = Array(2) { FloatArray(2) }
+    /** Gravity wells' centres: x, y pairs (px). */
+    val wells: FloatArray
+    /** Quicksand: for each tile, the middle of its patch (px), or NaN. */
+    val quickX: FloatArray
+    val quickY: FloatArray
     val pxW get() = w * TILE
     val pxH get() = h * TILE
 
@@ -229,6 +261,8 @@ class Hole(
         val mouths = IntArray(rows.first().length * rows.size) { -1 }
         val outs = arrayOfNulls<Pair<Int, Int>>(2)
         val rowW = rows.first().length
+        val portalTiles = IntArray(rows.first().length * rows.size) { -1 }
+        val wellList = ArrayList<Float>()
         tiles = Array(w * h) { i ->
             val x = i % w
             val y = i / w
@@ -284,6 +318,17 @@ class Hole(
                 'F' -> Tile.LEDGE_E
                 'Z' -> Tile.LEDGE_W
                 ';' -> Tile.RIDGE
+                'Y' -> Tile.KICK_N
+                'y' -> Tile.KICK_S
+                'X' -> Tile.KICK_E
+                'K' -> Tile.KICK_W
+                'B' -> Tile.BOOST
+                '1' -> { portalTiles[y * rowW + x] = 0; Tile.PORTAL }
+                '3' -> { portalTiles[y * rowW + x] = 1; Tile.PORTAL }
+                'Q' -> Tile.QUICKSAND
+                'M' -> Tile.PULSE_A
+                'R' -> Tile.PULSE_B
+                '@' -> { centre(wellList, x, y); Tile.WELL }
                 'T' -> { tee = x to y; Tile.FAIRWAY }
                 'O' -> { cup = x to y; Tile.GREEN }
                 else -> error("$name: unknown tile '$ch' at $x,$y")
@@ -325,6 +370,35 @@ class Hole(
         thinCount = thin
         plateOf = plates
         tunnelOf = mouths
+        portalOf = portalTiles
+        for (k in 0..1) {
+            val ends = portalTiles.indices.filter { portalTiles[it] == k }
+            require(ends.isEmpty() || ends.size == 2) { "$name: portal pair $k needs exactly two ends" }
+            for ((e, idx) in ends.withIndex()) { portalX[k][e] = (idx % w + 0.5f) * TILE; portalY[k][e] = (idx / w + 0.5f) * TILE }
+        }
+        wells = wellList.toFloatArray()
+        // Each quicksand patch pulls towards its own middle.
+        quickX = FloatArray(w * h) { Float.NaN }
+        quickY = FloatArray(w * h) { Float.NaN }
+        val seen = BooleanArray(w * h)
+        for (i0 in 0 until w * h) if (tiles[i0] == Tile.QUICKSAND && !seen[i0]) {
+            val patch = ArrayList<Int>()
+            val q = ArrayDeque<Int>()
+            seen[i0] = true; q.add(i0)
+            while (q.isNotEmpty()) {
+                val j = q.removeFirst(); patch += j
+                val jx = j % w
+                val jy = j / w
+                for ((nx, ny) in arrayOf(jx + 1 to jy, jx - 1 to jy, jx to jy + 1, jx to jy - 1)) {
+                    if (nx !in 0 until w || ny !in 0 until h) continue
+                    val k = ny * w + nx
+                    if (tiles[k] == Tile.QUICKSAND && !seen[k]) { seen[k] = true; q.add(k) }
+                }
+            }
+            val mx = patch.map { (it % w + 0.5f) * TILE }.average().toFloat()
+            val my = patch.map { (it / w + 0.5f) * TILE }.average().toFloat()
+            for (j in patch) { quickX[j] = mx; quickY[j] = my }
+        }
         for (k in 0..1) {
             val o = outs[k]
             val hasMouth = mouths.any { it == k }

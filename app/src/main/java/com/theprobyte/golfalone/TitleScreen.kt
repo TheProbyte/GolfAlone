@@ -64,7 +64,8 @@ internal fun GameView.drawTitle(c: Canvas) {
     smallText(c, info, lw / 2 + slide, st + 19, Palette.PAPER_INK_DIM)
     // Course dots.
     val cn = Holes.COURSES.size
-    for (k in 0 until cn) rect(c, lw / 2 - cn * 3 + k * 6 + 1, st + 26, 3, 2, if (k == ci) Palette.STAMP_RED else Palette.PAPER[1])
+    val dot = if (cn > 12) 4 else 6
+    for (k in 0 until cn) rect(c, lw / 2 - cn * dot / 2 + k * dot + 1, st + 26, dot - 2, 2, if (k == ci) Palette.STAMP_RED else Palette.PAPER[1])
     val by = st + 32
     val saved = open && hasSavedRound
     button(c, B_PLAY, pad, by, lw - pad * 2, PRIMARY_H, if (!open) "FINISH ${Holes.COURSES[ci - 1].name}" else if (saved) "CONTINUE HOLE ${progress.runHole + 1}" else "PLAY COURSE", open)

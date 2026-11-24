@@ -48,6 +48,10 @@ class HoleState(val hole: Hole) {
     fun thinOpenAt(tx: Int, ty: Int): Boolean { val k = hole.thinAt(tx, ty); return k >= 0 && thinOpen[k] }
     fun thinOpenAt(x: Float, y: Float): Boolean = thinOpenAt(kotlin.math.floor(x / TILE).toInt(), kotlin.math.floor(y / TILE).toInt())
 
+    /** Pulse walls: set A is up now (during the next shot) on even shot counts, set B on odd. */
+    fun pulseUp(t: Tile): Boolean = if (t == Tile.PULSE_A) shots % 2 == 0 else if (t == Tile.PULSE_B) shots % 2 == 1 else false
+    fun pulseUpAt(tx: Int, ty: Int): Boolean = pulseUp(hole.tile(tx, ty))
+
     /** Whether the gate at this tile is open. */
     fun gateOpen(tx: Int, ty: Int): Boolean { val g = hole.plateAt(tx, ty); return g >= 0 && gates[g] }
 
@@ -89,7 +93,7 @@ class HoleState(val hole: Hole) {
 
     /** A compact fingerprint (the planner keeps one line of play per state). */
     fun key(): Long {
-        var h = Tide.phase(shots).toLong()
+        var h = Tide.phase(shots).toLong() // (also fixes the shot parity, for pulse walls)
         for (b in broken) h = h * 31 + (if (b) 1 else 0)
         for (i in bx.indices) h = h * 131 + if (sunk[i]) 7 else ((bx[i] / 4).toInt() * 977 + (by[i] / 4).toInt())
         for (c in hole.crabs.indices) h = h * 37 + Math.floorMod(crabStep[c], hole.crabs[c].cycle)

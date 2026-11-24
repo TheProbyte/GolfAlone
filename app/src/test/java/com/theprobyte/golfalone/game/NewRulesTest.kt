@@ -171,4 +171,75 @@ class NewRulesTest {
         assertTrue(b.thinOpen[5])
         assertEquals(a.key(), b.key())
     }
+
+    // ------------------------------------------------------------ courses 10-19
+
+    @Test fun aKickerThrowsTheBallItsOwnWay() {
+        val row = "~," + ".".repeat(24) + ",~"
+        val rows = Array(6) { row }
+        rows[4] = "~,..X" + ".".repeat(21) + ",~"
+        val h = strip(*rows)
+        val ph = Physics(h)
+        ph.placeAt(4.5f * TILE, 9.5f * TILE)
+        ph.shootAngle(north, 0.2f)
+        ph.settle()
+        assertTrue("thrown east: ${ph.x}", ph.x > 8 * TILE)
+    }
+
+    @Test fun aBoostSendsTheBallOnFast() {
+        val h = strip(*Array(16) { "~,......,~" }.also { it[12] = "~,..B...,~" })
+        fun roll(): Float { val ph = Physics(h); ph.placeAt(4.5f * TILE, 17.5f * TILE); ph.shootAngle(north, 0.15f); ph.settle(); return ph.y }
+        val plain = strip(*Array(16) { "~,......,~" })
+        val ph = Physics(plain); ph.placeAt(4.5f * TILE, 17.5f * TILE); ph.shootAngle(north, 0.15f); ph.settle()
+        assertTrue("boosted ${roll()} vs plain ${ph.y}", roll() < ph.y - 4 * TILE)
+    }
+
+    @Test fun portalsJoinTheirTwoEnds() {
+        val h = strip("~,......,~", "~,..1...,~", "~########~", "~########~", "~,..1...,~", "~,......,~")
+        val log = object : PhysicsEvents { var n = 0; override fun onPortal(x0: Float, y0: Float, x1: Float, y1: Float) { n++ } }
+        val ph = Physics(h)
+        ph.placeAt(4.5f * TILE, 8.5f * TILE)
+        ph.shootAngle(north, 0.12f)
+        ph.settle(log)
+        assertEquals(1, log.n)
+        assertTrue("through the wall", ph.y < 5 * TILE)
+    }
+
+    @Test fun quicksandSwallowsABallThatStopsInIt() {
+        val h = strip("~,......,~", "~,......,~", "~,QQQQQQ,~", "~,QQQQQQ,~", "~,QQQQQQ,~", "~,......,~", "~,......,~")
+        var splash = 0
+        val ev = object : PhysicsEvents { override fun onSplash(x: Float, y: Float, dropX: Float, dropY: Float) { splash++ } }
+        val soft = Physics(h)
+        soft.shootAngle(north, 0.2f)
+        soft.settle(ev)
+        assertEquals("a soft putt dies in it", 1, splash)
+        assertTrue("dropped out of it", h.at(soft.x, soft.y) != Tile.QUICKSAND)
+        val firm = Physics(h)
+        firm.shootAngle(north, 0.75f)
+        firm.settle(ev)
+        assertEquals("a firm one crosses", 1, splash)
+    }
+
+    @Test fun pulseWallsTakeTurnsAndNeverTrapTheBall() {
+        val h = strip("~,......,~", "~MMMMMMMM~", "~,......,~", "~RRRRRRRR~", "~,......,~", "~,......,~")
+        val st = HoleState(h)
+        assertTrue(st.pulseUp(Tile.PULSE_A) && !st.pulseUp(Tile.PULSE_B))
+        val ph = Physics(h, st)
+        // Rest the ball on the B row while it's down; after the shot, B rises: the ball is moved clear.
+        ph.placeAt(4.5f * TILE, 6.5f * TILE)
+        assertTrue(ph.endShot())
+        assertTrue(st.pulseUp(Tile.PULSE_B))
+        assertFalse("not inside a raised wall", h.at(ph.x, ph.y) == Tile.PULSE_B)
+    }
+
+    @Test fun aGravityWellBendsTheBall() {
+        val rows = Array(14) { "~,..........,~" }
+        rows[5] = "~,.....@....,~"
+        val h = strip(*rows)
+        val ph = Physics(h)
+        ph.placeAt(5.5f * TILE, 15.5f * TILE)
+        ph.shootAngle(north, 0.45f)
+        ph.settle()
+        assertTrue("pulled east towards the well: ${ph.x}", ph.x > 6 * TILE)
+    }
 }

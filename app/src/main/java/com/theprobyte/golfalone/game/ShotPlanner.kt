@@ -17,7 +17,8 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
 
     private class Node(val x: Float, val y: Float, val shots: List<Shot>, val score: Float, val state: HoleState, val strokes: Int)
 
-    private val vents: IntArray = hole.tiles.indices.filter { hole.tiles[it].vent }.toIntArray()
+    /** Vents and kicker pads both throw the ball a few tiles: one step from anything in reach. */
+    private val vents: IntArray = hole.tiles.indices.filter { hole.tiles[it].vent || hole.tiles[it].isKicker }.toIntArray()
 
     /** Walking distance (in tiles) from each tile to the cup, over non-water, non-wall tiles. */
     val distance: IntArray = walk(flooded = false)
@@ -65,7 +66,7 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
                 val t = hole.tile(nx, ny)
                 val j = ny * hole.w + nx
                 // Cracked planks can be smashed and gates opened, so they're ways through.
-                if ((t.solid && t != Tile.PLANK && t != Tile.GATE) || t.water || (flooded && t == Tile.TIDAL) || d[j] != Int.MAX_VALUE) continue
+                if ((t.solid && t != Tile.PLANK && t != Tile.GATE && !t.isPulse) || t.water || (flooded && t == Tile.TIDAL) || d[j] != Int.MAX_VALUE) continue
                 if (t == Tile.GATE && (gates shr hole.plateOf[j]) and 1 == 0) continue
                 // Ledges are one way: no climbing onto one from below, or off one uphill.
                 if (here.isLedge && nx == x + here.dropX.toInt() && ny == y + here.dropY.toInt()) continue
@@ -78,6 +79,14 @@ class ShotPlanner(private val hole: Hole, private val angles: Int = 96, private 
                 val vx = v % hole.w - x
                 val vy = v / hole.w - y
                 if (vx * vx + vy * vy <= VENT_REACH * VENT_REACH) { d[v] = d[i] + 1; q.add(v) }
+            }
+            // A portal's two ends are one step apart.
+            if (here == Tile.PORTAL) {
+                val k = hole.portalOf[i]
+                for (e in 0..1) {
+                    val m = floor(hole.portalY[k][e] / TILE).toInt() * hole.w + floor(hole.portalX[k][e] / TILE).toInt()
+                    if (d[m] == Int.MAX_VALUE) { d[m] = d[i] + 1; q.add(m) }
+                }
             }
             // A tunnel's way out is one step from its mouth.
             if (here == Tile.TUNNEL_OUT) for (m in hole.tunnelOf.indices) {
