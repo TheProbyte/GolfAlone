@@ -5,10 +5,11 @@ to shoot, and play a quiet island course alone.
 
 ![Screenshots](docs/screenshots.png)
 
-**Status:** nineteen courses, 144 holes. The first nine (Driftwood Cove to Windward Bluffs) are
-hand-painted; the ten after them have nine holes each, laid out by a seeded generator and kept
-only where the bot proved them. Finish a round of one to open the next. See
-[the course plan](docs/COURSES_PLAN.md).
+**Status:** nineteen courses, each with a harder second round: 38 courses, 270 holes. The first
+nine (Driftwood Cove to Windward Bluffs) are hand-painted; the ten after them have nine holes
+each, laid out by a seeded generator and kept only where the bot proved them. Finish a round of
+one to open the next course and its second round. See [the course plan](docs/COURSES_PLAN.md)
+and [the next passes](docs/NEXT_PASSES_PLAN.md).
 
 ## What's in
 - **Driftwood Cove, 6 holes:**
@@ -40,6 +41,14 @@ only where the bot proved them. Finish a round of one to open the next. See
   - **Autumn Woods**: leaf piles, streams, trees.
   - **Zen Garden** (cherry blossom): raked gravel, koi ponds, moon bridges.
   - **Starfall Atoll** (starry night): wells, portals, kickers and boosts together.
+- **Second rounds:** every course has a harder ROUND II, chosen with the chips under its name
+  on the title. It opens when you finish a round of the first, at a new time of day.
+  - Courses 10-19: nine new holes each, with a challenge on every stretch, narrower fairways
+    and smaller greens.
+  - Courses 1-9: the same islands reworked: the cup moved, the green smaller, the tee further
+    back, and more of the course's own hazards.
+  - Each is proved by the bot and measured as less forgiving: fewer near-miss shots still make
+    par.
 - **Play modes:** play the full course, with a running score against par and a scorecard at the
   end, or practise any hole you've unlocked.
 - **Forgiving water:** splashes follow the drawn coastline, and only once the whole ball is in.

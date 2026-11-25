@@ -1,6 +1,6 @@
 # Golf Alone: the next passes (levels, visuals, animations, performance)
 
-> **Status:** being built, pass by pass. Done: passes 0-1.
+> **Status:** built (passes 0-9). What shipped differently from the plan is listed at the end.
 >
 > **Recommendation in one line:** give every course a harder **second round**, with its own course id,
 > instead of adding holes to the shipped courses. Before that, spend two short passes on
@@ -200,14 +200,14 @@ measurable and cheaper, and pass 2 finds out how many usable hard holes the gene
 |---|---|---|---|---|
 | 0 ✅ | **Measurement and CI time** | M1-M4, P7, P8. | The single search changes a bot best. | The saved bests file is unchanged; `GoldenShotsTest` passes. The user screenshots the new overlay page on Palm Grove, Grand Carousel and a Skyreach hole, as the baseline. |
 | 1 ✅ | **Stalls and slow paths** | P1-P4, P6. | Water appearing a frame late. | `DrawBudgetTest`; a new test that a practice jump never builds water on the main thread; a performance lap on the phone, before and after. |
-| 2 | **Second rounds: the groundwork and one course** | L1-L6, `Mood.ramps`, G1-G8, the tolerance number, and **Mirage Oasis II** only. | Too few usable holes at the hard setting; "harder" feeling unfair. | `HoleCompletableTest`, `PaletteMoodTest`, `HolePreviewTest`, `ProgressTest` for the new unlock, and a UI playthrough of the I / II chip. The user plays Oasis II and says whether it's hard in the right way. |
-| 3 | **The other nine generated second rounds** | Generate, prove, pick and emit them, with the V1 shapes. | CI time; names and moods for nine courses. | As pass 2, plus PNGs of all 81 holes. |
-| 4 | **Second rounds for courses 1-9** | `remix.py`; Cove II tuned by hand. | Reworked hand-made holes that play worse than the originals. | As pass 2; `GoldenShotsTest` shows the Cove is untouched; a check on the phone per course. |
-| 5 | **Sprites for the pieces** | V3 and P5 together: Carnival first as a trial, then the rest. | A piece that no longer reads as what it is. | The `SpriteSheetTest` sheet, `DrawBudgetTest` with a lower budget, screenshots, then the phone. |
-| 6 | **Trees, bushes and banks** | V2, V4, V5. | Scenery that looks like an obstacle; the see-through ball under new canopies. | Screenshots per course; `HolePreviewTest` (the coast is unchanged). |
-| 7 | **Sea and sky** | V6, V7. | Sea alignment during the glide; detail offshore read as land. | The glide checks in `UiPlaythroughTest`; `PaletteMoodTest`; the phone. |
-| 8 | **Feel animations** | A1-A7. | Timing that hides a change of state. | Screenshots mid-animation; reduce motion checked in the playthrough; the phone. |
-| 9 | **Decoration and life** | A8-A11. | The idle frame rate creeping up. | `RedrawPolicyTest`, `DrawBudgetTest`, a performance lap. |
+| 2 ✅ | **Second rounds: the groundwork and one course** | L1-L6, `Mood.ramps`, G1-G8, the tolerance number, and **Mirage Oasis II** only. | Too few usable holes at the hard setting; "harder" feeling unfair. | `HoleCompletableTest`, `PaletteMoodTest`, `HolePreviewTest`, `ProgressTest` for the new unlock, and a UI playthrough of the I / II chip. The user plays Oasis II and says whether it's hard in the right way. |
+| 3 ✅ | **The other nine generated second rounds** | Generate, prove, pick and emit them, with the V1 shapes. | CI time; names and moods for nine courses. | As pass 2, plus PNGs of all 81 holes. |
+| 4 ✅ | **Second rounds for courses 1-9** | `remix.py`; Cove II tuned by hand. | Reworked hand-made holes that play worse than the originals. | As pass 2; `GoldenShotsTest` shows the Cove is untouched; a check on the phone per course. |
+| 5 ✅ | **Sprites for the pieces** | V3 and P5 together: Carnival first as a trial, then the rest. | A piece that no longer reads as what it is. | The `SpriteSheetTest` sheet, `DrawBudgetTest` with a lower budget, screenshots, then the phone. |
+| 6 ✅ | **Trees, bushes and banks** | V2, V4, V5. | Scenery that looks like an obstacle; the see-through ball under new canopies. | Screenshots per course; `HolePreviewTest` (the coast is unchanged). |
+| 7 ✅ | **Sea and sky** | V6, V7. | Sea alignment during the glide; detail offshore read as land. | The glide checks in `UiPlaythroughTest`; `PaletteMoodTest`; the phone. |
+| 8 ✅ | **Feel animations** | A1-A7. | Timing that hides a change of state. | Screenshots mid-animation; reduce motion checked in the playthrough; the phone. |
+| 9 ✅ | **Decoration and life** | A8-A11. | The idle frame rate creeping up. | `RedrawPolicyTest`, `DrawBudgetTest`, a performance lap. |
 
 **Files most passes touch:**
 - `tools/holegen/gen2.py` and `select_emit.py`
@@ -215,3 +215,30 @@ measurable and cheaper, and pass 2 finds out how many usable hard holes the gene
 - `render/Bodies.kt`, `Terrain.kt`, `Sprites.kt`, `Palette.kt` and `Mood.kt`
 - `game/Holes.kt` and `ShotPlanner.kt`
 - the tests `HoleCompletableTest`, `CandidateProofTest` and `UiPlaythroughTest`
+
+---
+
+## What shipped, and what didn't
+
+- **Second rounds:** all 19, outside the unlock chain, as D1-D4 recommended. Courses 10-19 are
+  par 38-39 (nine holes each); courses 1-9 are par 18-22 (six holes each). Par is the bot's
+  best plus one, so a reworked hole can have a lower par than its original while being tighter.
+  Most reworks are measurably less forgiving. A few are harder only because they can no longer
+  be aced (best 1 to 2), and one (Temple Cay II, hole 3) measures slightly more forgiving. The
+  hole comments say which.
+- **Not judged yet:** whether the second rounds feel hard in the right way. That needs playing
+  on the phone.
+- **Physics fix found on the way:** the drop after a splash could put the ball inside a wall
+  edge, log or lone rock on the shore. It now keeps clear. One pinned best moved, so Dead Water
+  (Mangrove Maze II, hole 6) is par 6.
+- **Not built:**
+  - M3, the camera's performance lap. The overlay's second block covers the same questions
+    from a screenshot.
+  - P9 (memory): the overlay shows heap, and nothing has been changed.
+  - A7's flag dip and A11 (the hole card's flag and strip). The scorecard does fill in hole by
+    hole.
+- **Trees per style (V4)** show only where a hole has trees (palm tiles). Few generated holes
+  do, so the new pine, lamp post, gear pylon, crystal spire and cherry tree are rare for now.
+  The mangrove, cactus and autumn trees are common.
+- **No phone timings yet.** Every figure here is a draw count or a JVM time. The overlay
+  (long-press the logo) shows the per-phase split on the phone.

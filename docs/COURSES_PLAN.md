@@ -257,6 +257,23 @@ gravity wells (`@`), and the sky style, where the sea is open air (a fall costs 
 Each of these moods brings its own grass and water ramps before its light is graded on top
 (`Palette.own`), still held to the surface-distance check in `PaletteMoodTest`.
 
+## Second rounds (all 19 courses)
+
+Each course has a harder second round with its own id (`oasis2`), opened by finishing a round of
+the first (`Course.base`), outside the unlock chain. See [NEXT_PASSES_PLAN.md](NEXT_PASSES_PLAN.md)
+section 1 for why this beat adding holes.
+
+| Courses | How | Pars |
+|---|---|---|
+| 10-19 | Nine new holes each from the generator's hard setting (`select_emit.py --hard`) | 38-39 (first rounds 34) |
+| 1-9 | The same six islands reworked by `remix.py` (land to land only, so coasts are unchanged) | 18-22 (par is the bot's best + 1, so a tightened hole can have a lower par than before) |
+
+Their times of day: Cove II golden hour, Saltmarsh II night, Lighthouse II storm, Lagoon II
+dusk, Wreck II night, Ember II night, Frost II under the stars, Temple II dusk, Bluff II golden
+hour; and ten new moods for courses 10-19 (desert night, spore-light, neon, sunset sky, rust,
+mist, deep cave, first frost, moon garden, aurora), each keeping its course's own ground and
+water colours.
+
 ---
 
 ## Built once, before course 2
