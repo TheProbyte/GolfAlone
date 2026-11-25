@@ -151,7 +151,12 @@ internal fun GameView.drawFinal(c: Canvas) {
     val best = progress.courseBest()
     if (courseNewBest) bigText(c, "NEW COURSE BEST!", lw / 2, ry, Palette.STAMP_RED)
     else bigText(c, "COURSE BEST $best (${parText(best - course.par)})", lw / 2, ry, Palette.PAPER_INK_DIM)
-    opened?.let { bigText(c, "OPEN NOW: $it", lw / 2, ry + 12, Palette.STAMP_GREEN) }
+    // What the round opened: the next course and/or this course's second round, a line each.
+    for ((k, name) in opened.withIndex()) {
+        val line = if (k == 0) "OPEN NOW: $name" else "AND $name"
+        if (PixelFont.width(line, 1, Face.BIG) > lw - 4) textOverflows += line
+        bigText(c, line, lw / 2, ry + 12 + k * 10, Palette.STAMP_GREEN)
+    }
     if (modeT < 0.4f) return
     val pad = 8
     val bw = (lw - pad * 2 - GAP) / 3

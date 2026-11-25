@@ -5,7 +5,7 @@ to shoot, and play a quiet island course alone.
 
 ![Screenshots](docs/screenshots.png)
 
-**Status:** nineteen courses, each with a harder second round: 38 courses, 270 holes. The first
+**Status:** nineteen courses, each with a harder second round: 38 courses, 288 holes. The first
 nine (Driftwood Cove to Windward Bluffs) are hand-painted; the ten after them have nine holes
 each, laid out by a seeded generator and kept only where the bot proved them. Finish a round of
 one to open the next course and its second round. See [the course plan](docs/COURSES_PLAN.md)

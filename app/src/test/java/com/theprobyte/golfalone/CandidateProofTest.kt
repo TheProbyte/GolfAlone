@@ -45,7 +45,9 @@ class CandidateProofTest {
                 pool.submit<String> {
                     val planner = ShotPlanner(hole)
                     val best = (1..hole.par).firstNotNullOfOrNull { planner.solve(it) }
-                    "$key par=${hole.par} best=${best?.strokes ?: 0} tol=${if (best == null) "-" else "%.2f".format(tolerance(hole, best, hole.par, planner))}"
+                    // With -PatBest, at the bot's best + 1 (how second rounds are scored) instead of the hole's own par.
+                    val par = if (System.getProperty("golfalone.atBest") != null && best != null) best.strokes + 1 else hole.par
+                    "$key par=$par best=${best?.strokes ?: 0} tol=${if (best == null) "-" else "%.2f".format(tolerance(hole, best, par, planner))}"
                 }
             }.map { it.get() }
         } finally { pool.shutdown() }

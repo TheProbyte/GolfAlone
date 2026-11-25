@@ -146,7 +146,7 @@ starfall-9 4
 cove2-1 2
 cove2-2 2
 cove2-3 2
-cove2-4 4
+cove2-4 3
 cove2-5 2
 cove2-6 2
 marsh2-1 2
@@ -165,7 +165,7 @@ lagoon2-1 2
 lagoon2-2 2
 lagoon2-3 3
 lagoon2-4 2
-lagoon2-5 3
+lagoon2-5 2
 lagoon2-6 2
 wreck2-1 2
 wreck2-2 2

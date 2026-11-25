@@ -50,4 +50,10 @@ python3 remix.py ../../app/src/main/java/com/theprobyte/golfalone/game/Lighthous
 (prove as above, with -Ptolerance=1, and -PshippedTolerance=<file> for the originals' figures)
 python3 select_remix.py cand_remix.txt <shipped tolerance file> [--force]   # writes <Course>II.kt
 ```
-A rework is kept when its best is the original's or one more and its tolerance is lower.
+A rework is kept when its best is the original's or one more and its tolerance is lower than
+the original's, both measured at best + 1 (`-PshippedTolerance=<file> -PatBest=1`). It must
+also make par without the tide or ramps (the proof reports `dry=` and `flat=`).
+
+The committed `*II.kt` files are the source of truth for the second rounds, as for the first:
+the generator has changed since (logs and lone rocks are kept off the shore), so a rerun gives
+different holes.

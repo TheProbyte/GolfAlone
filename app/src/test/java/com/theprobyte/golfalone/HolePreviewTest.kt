@@ -32,10 +32,10 @@ class HolePreviewTest {
         }
         val dir = System.getProperty("golfalone.shots")?.let { File(it, "holes").apply { mkdirs() } } ?: return
         val scale = 3
-        for (course in Holes.COURSES) {
+        for (course in Holes.allCourses) {
             com.theprobyte.golfalone.render.Palette.setMood(course.mood)
             course.holes.forEachIndexed { i, hole ->
-                val base = baked.getValue(hole)
+                val base = Terrain(hole) // baked again: the course's time of day is set now
                 for (t in listOfNotNull(base, base.flooded)) {
                     val b = Bitmap.createBitmap(t.w * scale, t.h * scale, Bitmap.Config.ARGB_8888)
                     val c = Canvas(b)

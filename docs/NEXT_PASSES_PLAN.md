@@ -220,12 +220,16 @@ measurable and cheaper, and pass 2 finds out how many usable hard holes the gene
 
 ## What shipped, and what didn't
 
-- **Second rounds:** all 19, outside the unlock chain, as D1-D4 recommended. Courses 10-19 are
-  par 38-39 (nine holes each); courses 1-9 are par 18-22 (six holes each). Par is the bot's
-  best plus one, so a reworked hole can have a lower par than its original while being tighter.
-  Most reworks are measurably less forgiving. A few are harder only because they can no longer
-  be aced (best 1 to 2), and one (Temple Cay II, hole 3) measures slightly more forgiving. The
-  hole comments say which.
+- **Second rounds:** all 19, outside the unlock chain, opening at any score, as D1-D4
+  recommended. Courses 10-19 are par 38-39 (nine holes each); courses 1-9 are par 18-22 (six
+  holes each).
+  - Par is the bot's best plus one, so a reworked hole can have a lower par than its original
+    while being tighter.
+  - Tolerance compared on equal terms (every hole at its bot best plus one): first rounds
+    average 0.80 and second rounds 0.64. Every second round averages lower than its first.
+  - Of the 54 reworked holes, 47 are clearly less forgiving and 1 is as tight as an already
+    tight original. The other 6 are the least forgiving rework the generator found, and some of
+    those are no tighter than the original. The hole comments say which.
 - **Not judged yet:** whether the second rounds feel hard in the right way. That needs playing
   on the phone.
 - **Physics fix found on the way:** the drop after a splash could put the ball inside a wall

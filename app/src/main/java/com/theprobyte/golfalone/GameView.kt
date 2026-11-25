@@ -212,8 +212,8 @@ class GameView(
     internal var islandFadeT = -1f
     internal var courseSlideT = 1f
     internal var courseSlideDir = 0
-    /** A course the round just finished has opened (shown on the scorecard), or null. */
-    internal var opened: String? = null
+    /** What the round just finished has opened (the next course, this one's second round), for the scorecard. */
+    internal var opened: List<String> = emptyList()
     /** Time since the tide last turned (-1: settled). */
     internal var tideT = -1f
     /** The last buoy hit: when (-1: none) and where, for its wobble. */
@@ -887,9 +887,9 @@ class GameView(
                 courseNewBest = progress.recordCourse(scores.sum())
                 val news = listOfNotNull(
                     nextCourse?.takeIf { !wasOpen && courseOpen(it) }?.name,
-                    second?.takeIf { !secondWasOpen && courseOpen(it) }?.let { "ROUND II" },
+                    second?.takeIf { !secondWasOpen && courseOpen(it) }?.name,
                 )
-                opened = if (news.isEmpty()) null else news.joinToString(" + ")
+                opened = news
                 progress.clearRun()
                 setMode(Mode.FINAL)
             }
