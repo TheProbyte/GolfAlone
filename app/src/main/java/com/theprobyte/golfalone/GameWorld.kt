@@ -54,13 +54,13 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     val now = terrain.at(holeState.high)
     val ground = if (islandFadeT >= 0f) islandPaint.also { it.alpha = (islandFadeT / ISLAND_FADE_S * 255).toInt().coerceIn(0, 255) } else blit
     c.drawBitmap(now.ground, gx, gy, ground)
-    c.drawBitmap(now.water(wf), gx, gy, ground)
+    now.waterOrNull(wf)?.let { c.drawBitmap(it, gx, gy, ground) }
     if (tideT >= 0f && terrain.flooded != null) {
         val was = terrain.at(!holeState.high)
         val a = ((1f - tideT / TIDE_S) * 255).toInt().coerceIn(0, 255)
         tidePaint.alpha = a
         c.drawBitmap(was.ground, gx, gy, tidePaint)
-        c.drawBitmap(was.water(wf), gx, gy, tidePaint)
+        was.waterOrNull(wf)?.let { c.drawBitmap(it, gx, gy, tidePaint) }
     } else if (terrain.flooded != null && mode == Mode.PLAY && !physics.moving) {
         // What the tide will do after this shot.
         val warn = if (!holeState.high && holeState.highAfter) terrain.floodSoon else if (holeState.high && !holeState.highAfter) terrain.drainSoon else null
@@ -115,7 +115,7 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     // Buoys, coral, crabs, barrels and cracked planks.
     val crabK = if (crabMoveT < 0f || reduceMotion) 1f else min(1f, crabMoveT / CRAB_STEP_S)
     Bodies.draw(c, hole, holeState, ix, iy, if (reduceMotion) 0f else steppedTime, crabFromX, crabFromY, crabK,
-        mode == Mode.PLAY && !physics.moving && sinkT < 0f, bumpX, bumpY, bumpT)
+        mode == Mode.PLAY && !physics.moving && sinkT < 0f, bumpX, bumpY, bumpT, lw + 1, lh + 1)
 
     mark(GameView.PH_PIECES)
     ambient.draw(c, ix, iy, time, physics.x, physics.y, physics.moving, reduceMotion)

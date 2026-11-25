@@ -31,7 +31,6 @@ import com.theprobyte.golfalone.render.PixelFont.Face
 import com.theprobyte.golfalone.render.SpriteFx
 import com.theprobyte.golfalone.render.Sprites
 import com.theprobyte.golfalone.render.Terrain
-import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import kotlin.math.PI
 import kotlin.math.abs
@@ -88,7 +87,9 @@ class GameView(
     /** The course's time of day, set before anything is baked from the palette. */
     @Suppress("unused") internal val moodSet = run { progress.course = course.id; Palette.setMood(course.mood) }
     internal val n get() = course.holes.size
-    internal val builder = Executors.newSingleThreadExecutor { r -> Thread(r, "terrain").apply { isDaemon = true } }
+    internal val builder = MapBuilder("terrain")
+    /** Builds water frames, so they never hold up a map or the main thread. */
+    internal val waterer = MapBuilder("water")
     internal var terrains: List<Future<Terrain>> = course.holes.map { h -> builder.submit<Terrain> { Terrain(h) } }
     internal var thumbs = arrayOfNulls<Bitmap>(n)
     internal var thumbBox = 0L
@@ -365,6 +366,8 @@ class GameView(
         physics = Physics(hole, holeState)
         scratch = Physics(hole, HoleState(hole))
         terrain = terrains[i].get()
+        // This hole's water is built off the main thread; the map shows without it for a moment.
+        if (!terrain.waterReady) { val t = terrain; waterer.submit { t.prepareWater() } }
         ambient.reset(terrain, course.id)
         crabFromX = FloatArray(hole.crabs.size) { holeState.crabX(it) }
         crabFromY = FloatArray(hole.crabs.size) { holeState.crabY(it) }
@@ -375,7 +378,7 @@ class GameView(
         val next = if (backdrop) (i + 1) % n else i + 1
         for (k in 0 until n) if (k != i && k != next && terrains[k].isDone) terrains[k].get().releaseWater()
         // Hold this course's future itself: after a course change the list is a different one.
-        if (next < n) { val f = terrains[next]; builder.submit { if (!f.isCancelled) runCatching { f.get().prepareWater() } } }
+        if (next < n) { val f = terrains[next]; waterer.submit { if (!f.isCancelled) runCatching { f.get().prepareWater() } } }
         slopeTiles = (0 until hole.w * hole.h)
             .filter { val t = hole.tiles[it]; t.slopeX != 0f || t.slopeY != 0f }.toIntArray()
         strokes = 0
@@ -476,22 +479,33 @@ class GameView(
         onImmersive?.invoke((mode == Mode.PLAY || mode == Mode.CARD) && progress.hideStatusBar)
     }
 
-    /** Dissolves out, runs [action], dissolves back in. Input waits until it's done. */
-    internal fun fadeTo(action: () -> Unit) {
+    /**
+     * Dissolves out, runs [action], dissolves back in. Input waits until it's done. With [hole],
+     * that hole's map jumps the builder's queue and the screen stays dark until it's ready.
+     */
+    internal fun fadeTo(hole: Int = -1, action: () -> Unit) {
         if (fadeT >= 0f) return
         if (glideT >= 0f) { glideT = -1f; glideAction = null; glideOffset = 0f; glideOffsetX = 0f } // the fade hides it
         fadeT = 0f
         fadeAction = action
+        fadeWait = if (hole in terrains.indices) mapFor(hole) else null
         fadeDone = false
         sfx.whoosh()
     }
+
+    internal var fadeWait: Future<Terrain>? = null
+    internal var glideWait: Future<Terrain>? = null
+
+    /** Hole [i]'s map, moved to the front of the builder's queue if it isn't built yet. */
+    internal fun mapFor(i: Int): Future<Terrain> = terrains[i].also { if (!it.isDone) builder.promote(it) }
 
     /**
      * Slides the view off this island and onto the next one across the sea, running [action]
      * (which loads the hole) at the halfway point. [blockInput] holds input until it lands.
      */
-    internal fun glideTo(blockInput: Boolean, action: () -> Unit) {
+    internal fun glideTo(blockInput: Boolean, hole: Int = -1, action: () -> Unit) {
         if (glideT >= 0f || fadeT >= 0f) return
+        glideWait = if (hole in terrains.indices) mapFor(hole) else null
         glideT = 0f
         glideAction = action
         glideBlocks = blockInput
@@ -507,6 +521,9 @@ class GameView(
             // margin because the last frame drawn before the swap falls a little short.
             val out = max(lh + 16f, hole.pxH + 16f - camY) * 1.15f
             if (glideT < GLIDE_S) { val k = glideT / GLIDE_S; glideOffset = out * k * k; return }
+            // Out over open sea until the next map is ready.
+            if (glideWait?.isDone == false) { glideT = GLIDE_S; glideOffset = out; return }
+            glideWait = null
             // Halfway: swap islands. The new view starts where the sea's pattern lines up with
             // the old one, so the water runs on without a jump.
             val oldX = camX + glideOffsetX
@@ -548,7 +565,7 @@ class GameView(
         sheetT = 1f
     }
 
-    fun startCourse() = fadeTo {
+    fun startCourse() = fadeTo(0) {
         courseRun = true
         scores.fill(0)
         courseNewBest = false
@@ -557,7 +574,7 @@ class GameView(
         setMode(Mode.PLAY)
     }
 
-    internal fun continueRound() = fadeTo {
+    internal fun continueRound() = fadeTo(progress.runHole.coerceIn(0, n - 1)) {
         courseRun = true
         val saved = progress.runScores(n)
         for (i in 0 until n) scores[i] = saved[i]
@@ -575,7 +592,7 @@ class GameView(
         setMode(Mode.PLAY)
     }
 
-    internal fun practise(i: Int) = fadeTo {
+    internal fun practise(i: Int) = fadeTo(i) {
         courseRun = false
         loadHole(i)
         setMode(Mode.PLAY)
@@ -814,7 +831,7 @@ class GameView(
             B_MOTION -> progress.reduceMotion = !progress.reduceMotion
             B_PAUSE -> openSheet(Sheet.PAUSE)
             B_RESUME -> closeSheet()
-            B_RESTART -> { val i = holeIndex; fadeTo { loadHole(i); setMode(Mode.PLAY) } }
+            B_RESTART -> { val i = holeIndex; fadeTo(i) { loadHole(i); setMode(Mode.PLAY) } }
             B_QUIT -> {
                 saveHoleInProgress()
                 // Holed out on the last hole while quitting: the round is complete, so keep its best.
@@ -849,7 +866,7 @@ class GameView(
             }
         } else if (next < n) {
             val go = { loadHole(next); setMode(Mode.PLAY) }
-            if (reduceMotion) fadeTo(go) else glideTo(true, go)
+            if (reduceMotion) fadeTo(next, go) else glideTo(true, next, go)
         } else toSelect()
     }
 
@@ -1164,7 +1181,9 @@ class GameView(
         }
         if (fadeT >= 0f) {
             fadeT += dt
-            if (!fadeDone && fadeT >= FADE) { fadeDone = true; fadeAction?.invoke(); fadeAction = null }
+            // Dark until the map the action needs is built.
+            if (!fadeDone && fadeT >= FADE && fadeWait?.isDone == false) fadeT = FADE
+            if (!fadeDone && fadeT >= FADE) { fadeDone = true; fadeWait = null; fadeAction?.invoke(); fadeAction = null }
             if (fadeT >= 2 * FADE) fadeT = -1f
         }
         val live = mode == Mode.PLAY && sheet == Sheet.NONE
@@ -1181,7 +1200,7 @@ class GameView(
             pressedId = NONE
             haptics.cup(this, false)
             val i = holeIndex
-            fadeTo { loadHole(i); setMode(Mode.PLAY) }
+            fadeTo(i) { loadHole(i); setMode(Mode.PLAY) }
         }
         // Long-press the logo to show frame times.
         if (logoDownT >= 0f && time - logoDownT > 1f) {
@@ -1337,7 +1356,8 @@ class GameView(
         val ix = floor(vx).toInt()
         val iy = floor(vy).toInt()
         drawWorld(ix, iy)
-        if (uiNeedsRedraw()) drawUi()
+        val state = redrawState()
+        if (uiNeedsRedraw(state)) drawUi()
         mark(PH_UI)
 
         val shake = if (shakeT >= 0f) (if ((shakeT * 60f).toInt() % 2 == 0) scale else -scale) else 0
@@ -1360,13 +1380,14 @@ class GameView(
         if (drawn > worstDrawMs) worstDrawMs = drawn
 
         if (isAttachedToWindow && windowVisibility == VISIBLE) {
-            val wait = RedrawPolicy.intervalMs(redrawState())
+            val wait = RedrawPolicy.intervalMs(state)
             lastWasActive = wait == 0L
             if (wait == 0L) postInvalidateOnAnimation() else postInvalidateDelayed(wait)
         }
     }
 
     internal var lastWasActive = true
+    internal var uiTitleTick = -1
 
     /** What's moving right now, for [RedrawPolicy]. */
     internal fun redrawState(): RedrawPolicy.State {
@@ -1401,12 +1422,15 @@ class GameView(
      * The UI layer is redrawn (and re-uploaded) only when something it shows could have
      * changed: input, a transition, an animated hint or message, or a change of state.
      */
-    internal fun uiNeedsRedraw(): Boolean {
+    internal fun uiNeedsRedraw(state: RedrawPolicy.State = redrawState()): Boolean {
         val key = (mode.ordinal.toLong() shl 56) xor (sheet.ordinal.toLong() shl 52) xor (strokes.toLong() shl 40) xor
             (holeIndex.toLong() shl 32) xor (scores.sum().toLong() shl 16) xor (pressedId.toLong() and 0xffff) xor (bookTab.toLong() shl 48) xor
             (if (physics.moving) 1L shl 60 else 0L) xor (if (sinkT >= 0f) 1L shl 61 else 0L)
-        val animating = redrawState().let { it.touching || it.transitioning || it.effects } || progress.debugOverlay ||
-            (mode == Mode.PLAY && playHintShowing()) || (mode == Mode.TITLE)
+        // The title's logo bobs on the 15 Hz clock: redraw it when that ticks, not every frame.
+        val titleTick = mode == Mode.TITLE && (time * 15f).toInt() != uiTitleTick
+        if (mode == Mode.TITLE) uiTitleTick = (time * 15f).toInt()
+        val animating = state.touching || state.transitioning || state.effects || progress.debugOverlay ||
+            (mode == Mode.PLAY && playHintShowing()) || titleTick
         if (!animating && key == uiDrawnKey && uiVersion == uiDrawnVersion) return false
         uiDrawnKey = key
         uiDrawnVersion = uiVersion
@@ -1579,6 +1603,7 @@ class GameView(
 
     // ---------------------------------------------------------------- tests
 
+    internal val terrainForTest get() = terrain
     internal val ballX get() = physics.x
     internal val ballY get() = physics.y
     internal val ballMoving get() = physics.moving

@@ -33,17 +33,27 @@ object Bodies {
     private val PULSE_B = 0xFF3AB8A8.toInt()
     private val shadow get() = Palette.alpha(Palette.INK_SHADOW, 90)
 
-    /** Shadows and ground-level bodies, drawn under the ball. */
+    private var viewW = 4096
+    private var viewH = 4096
+    private val PULSES = arrayOf(Tile.PULSE_A, Tile.PULSE_B)
+
+    /** Whether something drawn at ([x], [y]) on screen (top left of its tile) could show. */
+    private fun on(x: Int, y: Int): Boolean = x > -24 && y > -24 && x < viewW + 24 && y < viewH + 24
+
+    /** Shadows and ground-level bodies, drawn under the ball; only what's within [vw] by [vh] of the view. */
     fun draw(
         c: Canvas, hole: Hole, st: HoleState, ix: Int, iy: Int, time: Float,
         crabFromX: FloatArray, crabFromY: FloatArray, crabK: Float, showSteps: Boolean,
-        bumpX: Float, bumpY: Float, bumpT: Float,
+        bumpX: Float, bumpY: Float, bumpT: Float, vw: Int = 4096, vh: Int = 4096,
     ) {
+        viewW = vw
+        viewH = vh
         // Belts: ridges riding along the way the belt runs.
         if (hole.belts) for (i in hole.currentTiles) {
             val t = hole.tiles[i]
             val tx = i % hole.w
             val ty = i / hole.w
+            if (!on(tx * TILE - ix, ty * TILE - iy)) continue
             val horiz = t.flowX != 0f
             val sign = if (horiz) t.flowX else t.flowY
             val lo = if (horiz) hole.tile(tx, ty - 1) else hole.tile(tx - 1, ty)
@@ -53,11 +63,8 @@ object Bodies {
             for (k in 0 until TILE / 4) {
                 val along = ((k * 4 + time * 14f * sign) % TILE + TILE) % TILE
                 val a = along.toInt()
-                for (b in b0 until b1) {
-                    val x = tx * TILE + (if (horiz) a else b) - ix
-                    val y = ty * TILE + (if (horiz) b else a) - iy
-                    px(c, x, y, Palette.STONES[2])
-                }
+                if (horiz) rect(c, tx * TILE + a - ix, ty * TILE + b0 - iy, 1, b1 - b0, Palette.STONES[2])
+                else rect(c, tx * TILE + b0 - ix, ty * TILE + a - iy, b1 - b0, 1, Palette.STONES[2])
             }
         }
         // Currents: streaks of foam drifting the way the water runs.
@@ -65,6 +72,7 @@ object Bodies {
             val t = hole.tiles[i]
             val tx = i % hole.w
             val ty = i / hole.w
+            if (!on(tx * TILE - ix, ty * TILE - iy)) continue
             for (s in 0 until 2) {
                 val h = Terrain.hash(tx * 2 + s, ty, 73)
                 val along = ((time * 14f + h * TILE * 3) % TILE).toInt()
@@ -83,6 +91,7 @@ object Bodies {
         for (i in hole.tilesOf(Tile.PORTAL)) {
             val x = (i % hole.w) * TILE + 4 - ix
             val y = (i / hole.w) * TILE + 4 - iy
+            if (!on(x, y)) continue
             val col = if (hole.portalOf[i] == 0) PORTAL_A else PORTAL_B
             Pix.ring(c, x - 0.5f, y - 0.5f, 3.5f, col)
             Pix.ring(c, x - 0.5f, y - 0.5f, 2f, Palette.alpha(col, 140))
@@ -98,6 +107,7 @@ object Bodies {
             val cy = hole.quickY[i] - iy
             val tx = (i % hole.w) * TILE + 4f - ix
             val ty = (i / hole.w) * TILE + 4f - iy
+            if (!on(tx.toInt(), ty.toInt())) continue
             val r = kotlin.math.hypot(tx - cx, ty - cy) * (1f - (time * 0.25f + Terrain.hash(i, 1, 108)) % 1f) + 1f
             val a = kotlin.math.atan2(ty - cy, tx - cx) + time * 0.8f
             px(c, (cx + cos(a) * r).roundToInt(), (cy + sin(a) * r).roundToInt(), Palette.SANDS[1])
@@ -107,7 +117,7 @@ object Bodies {
         while (wk < hole.wells.size) {
             val cx = hole.wells[wk] - ix
             val cy = hole.wells[wk + 1] - iy
-            for (s in 0 until 4) {
+            if (on(cx.toInt(), cy.toInt())) for (s in 0 until 4) {
                 val ph = (time * 0.5f + s * 0.25f) % 1f
                 val r = 14f * (1f - ph) + 1f
                 val a = s * 1.571f + ph * 4f
@@ -116,12 +126,13 @@ object Bodies {
             wk += 2
         }
         // Pulse walls: up, a coloured block; down, an outline pulsing (it rises after this shot).
-        for (t in arrayOf(Tile.PULSE_A, Tile.PULSE_B)) {
+        for (t in PULSES) {
             val col = if (t == Tile.PULSE_A) PULSE_A else PULSE_B
             val up = st.pulseUp(t)
             for (i in hole.tilesOf(t)) {
                 val x = (i % hole.w) * TILE - ix
                 val y = (i / hole.w) * TILE - iy
+                if (!on(x, y)) continue
                 if (up) {
                     rect(c, x + 1, y + 6, TILE, 2, shadow)
                     rect(c, x, y, TILE, 5, Palette.lerp(col, Palette.PAPER[3], 0.25f))
@@ -140,7 +151,7 @@ object Bodies {
         if (hole.windDeg != null) for (i in hole.tilesOf(Tile.RIDGE)) {
             val tx = i % hole.w
             val ty = i / hole.w
-            if (Terrain.hash(tx, ty, 86) > 0.45f) continue
+            if (Terrain.hash(tx, ty, 86) > 0.45f || !on(tx * TILE - ix, ty * TILE - iy)) continue
             val ph = ((time * 1.6f + Terrain.hash(tx, ty, 87)) % 1f)
             val x = (tx * TILE + 4 + hole.windX * (ph * 12f - 6f)).roundToInt() - ix
             val y = (ty * TILE + 4 + hole.windY * (ph * 12f - 6f)).roundToInt() - iy
@@ -153,6 +164,7 @@ object Bodies {
         for (i in hole.tilesOf(Tile.VENT)) {
             val x = (i % hole.w) * TILE + 4 - ix
             val y = (i / hole.w) * TILE + 4 - iy
+            if (!on(x, y)) continue
             for (s in 0 until 3) {
                 val ph = ((time * 0.8f + s / 3f + Terrain.hash(i, s, 88)) % 1f)
                 val sx = x + (kotlin.math.sin(ph * 6f + s) * 1.5f).roundToInt()
@@ -165,6 +177,7 @@ object Bodies {
             val g = hole.plateOf[i]
             val x = (i % hole.w) * TILE - ix
             val y = (i / hole.w) * TILE - iy
+            if (!on(x, y)) continue
             if (g < 0) { px(c, x + 3, y + 3, Palette.STONES[1]); px(c, x + 4, y + 4, Palette.STONES[1]); continue }
             rect(c, x + 1, y + 1, TILE - 2, TILE - 2, if (st.gates[g]) Palette.SANDS[2] else Palette.SANDS[1])
             glyph(c, x + 2, y + 2, g, true)
@@ -176,6 +189,7 @@ object Bodies {
             val ty = i / hole.w
             val x = tx * TILE - ix
             val y = ty * TILE - iy
+            if (!on(x, y)) continue
             if (st.gates[g]) {
                 px(c, x + 1, y + 6, Palette.STONES[1]); px(c, x + 5, y + 2, Palette.STONES[1]); px(c, x + 6, y + 5, Palette.STONES[3])
                 continue
@@ -209,6 +223,7 @@ object Bodies {
             val ty = i / hole.w
             val x = tx * TILE - ix
             val y = ty * TILE - iy
+            if (!on(x, y)) continue
             if (st.thinOpen[k]) {
                 rect(c, x, y, TILE, TILE, Palette.SEA[2])
                 for (u in 0 until TILE) {
@@ -226,19 +241,27 @@ object Bodies {
         }
 
         // Cracked planks still standing: a board wall with a split down it.
-        for (ty in 0 until hole.h) for (tx in 0 until hole.w) {
-            val g = hole.plankAt(tx, ty)
-            if (g < 0) continue
+        if (hole.plankCount > 0) for (i in hole.tilesOf(Tile.PLANK)) {
+            val tx = i % hole.w
+            val ty = i / hole.w
+            val g = hole.plankOf[i]
             val x = tx * TILE - ix
             val y = ty * TILE - iy
+            if (!on(x, y)) continue
             if (st.broken[g]) splinters(c, x, y, tx, ty) else plank(c, hole, x, y, tx, ty)
         }
         var k = 0
-        while (k < hole.corals.size) { coral(c, hole.corals[k].roundToInt() - ix, hole.corals[k + 1].roundToInt() - iy, k); k += 2 }
+        while (k < hole.corals.size) {
+            val x = hole.corals[k].roundToInt() - ix
+            val y = hole.corals[k + 1].roundToInt() - iy
+            if (on(x, y)) coral(c, x, y, k)
+            k += 2
+        }
         k = 0
         while (k < hole.buoys.size) {
             val bx = hole.buoys[k]
             val by = hole.buoys[k + 1]
+            if (!on(bx.roundToInt() - ix, by.roundToInt() - iy)) { k += 2; continue }
             val hit = bumpT in 0f..0.15f && kotlin.math.hypot(bx - bumpX, by - bumpY) < 9f
             when (hole.style) {
                 "mushroom" -> mushroom(c, bx.roundToInt() - ix, by.roundToInt() - iy, hit)

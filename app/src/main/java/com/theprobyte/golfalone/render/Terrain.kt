@@ -56,6 +56,12 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
     /** The sea's moving layer, [FRAMES] frames, built on first use (see [releaseWater]). */
     fun water(f: Int): Bitmap = (waterFrames ?: buildWater())[f % FRAMES]
 
+    /** The water frame if it's built (this map's and its high-tide twin's), else null: never builds. */
+    fun waterOrNull(f: Int): Bitmap? = waterFrames?.get(f % FRAMES)
+
+    /** Whether [prepareWater] has nothing left to do. */
+    val waterReady: Boolean get() = waterFrames != null && (flooded?.waterReady ?: true)
+
     @Synchronized private fun buildWater(): Array<Bitmap> {
         waterFrames?.let { return it }
         val t0 = System.nanoTime()
@@ -1083,7 +1089,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
     private fun waterPixel(x: Int, y: Int, f: Int): Int {
         val i = y * w + x
         val d = edge[i]
-        val phase = 0.5f + 0.5f * kotlin.math.sin(2f * Math.PI.toFloat() * f / FRAMES)
+        val phase = PHASE[f % FRAMES]
         if (land[i] && nearPond[i]) return 0
         // The sky below a floating island: just a wisp of cloud at the island's edge, no waves.
         if (hole.style == "sky" && !land[i]) return if (d < 1.6f && (x + y + f) % 4 == 0) Palette.alpha(0xFFFFFFFF.toInt(), 110) else 0
@@ -1203,6 +1209,8 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
 
     companion object {
         const val FRAMES = 8
+        /** The wash's phase on each water frame (in and out once per loop). */
+        private val PHASE = FloatArray(FRAMES) { f -> 0.5f + 0.5f * kotlin.math.sin(2f * Math.PI.toFloat() * f / FRAMES) }
 
         /** Size of the tiling sea beyond the map: whole crest cells, so it repeats seamlessly. */
         const val SEA_W = 78

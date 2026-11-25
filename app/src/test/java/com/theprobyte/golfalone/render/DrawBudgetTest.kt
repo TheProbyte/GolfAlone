@@ -22,7 +22,7 @@ import org.robolectric.annotation.GraphicsMode
 class DrawBudgetTest {
 
     /** Primitives the pieces of one hole may draw in one frame. */
-    private val budget = 700
+    private val budget = 500
 
     @Test fun piecesStayWithinTheirBudget() {
         val lw = 180
@@ -38,7 +38,7 @@ class DrawBudgetTest {
                 val ix = (fx - lw / 2f).toInt().coerceIn(0, maxOf(0, hole.pxW - lw))
                 val iy = (fy - lh / 2f).toInt().coerceIn(-40, maxOf(-40, hole.pxH - lh + 40))
                 Pix.calls = 0
-                Bodies.draw(c, hole, st, ix, iy, 1.3f, crabX, crabY, 1f, true, -99f, -99f, -1f)
+                Bodies.draw(c, hole, st, ix, iy, 1.3f, crabX, crabY, 1f, true, -99f, -99f, -1f, lw, lh)
                 Bodies.windmills(c, hole, ix, iy, 0.7f)
                 Bodies.scenery(c, hole, ix, iy, 1.3f, false)
                 val n = Pix.calls

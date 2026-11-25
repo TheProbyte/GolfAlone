@@ -184,6 +184,9 @@ abstract class UiHarness {
                 while (game.selectedHole < h) press(GameView.B_NEXT_HOLE)
                 press(GameView.B_PLAY_HOLE)
                 runUntil(4000) { !game.busy }
+                // A practice jump never builds water on the main thread.
+                runUntil(4000) { game.terrainForTest.waterReady }
+                assertEquals("${game.hole.name}: water built off the main thread", "water", game.terrainForTest.waterThread)
                 run(300)
                 frame("c-$id-${h + 1}-tee")
                 playHole("c-$id-${h + 1}")
