@@ -31,6 +31,8 @@
 5. ✅ **Eighteen more courses** ([COURSES_PLAN.md](COURSES_PLAN.md)): courses 2–9 hand-painted
    (Saltmarsh Flats to Windward Bluffs), then ten nine-hole courses (Mirage Oasis to Starfall
    Atoll) laid out by a seeded generator and proven by the bot ([tools/holegen](../tools/holegen/README.md)).
+6. 🔶 **Next passes** ([NEXT_PASSES_PLAN.md](NEXT_PASSES_PLAN.md)): measurement and load stalls first,
+   then a harder second round of every course, then piece sprites, scenery, sea and sky, and animation.
 6. **Later:** endless and daily holes, the ghost of your best round.
 
 Details: [ART_AND_FEATURES_PLAN.md](ART_AND_FEATURES_PLAN.md). Rows still open in the older plans
