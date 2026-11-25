@@ -48,10 +48,10 @@ class CourseTourTest : UiHarness() {
         run(200)
         frame("c-switch-played")
         press(GameView.B_PAUSE); press(GameView.B_QUIT)
-        while (game.courseForTest.id != "cove") { press(GameView.B_PREV_COURSE) }
+        goTo("cove")
 
         // A round on a tidal hole: two shots, Save + Quit, Continue. The tide is where it was.
-        while (game.courseForTest.id != "marsh") { press(GameView.B_NEXT_COURSE); runUntil(3000) { !game.fading } }
+        goTo("marsh")
         press(GameView.B_PLAY)
         runUntil(4000) { !game.busy }
         playHole("c-marsh-round", maxShots = 1)
@@ -76,7 +76,8 @@ class CourseTourTest : UiHarness() {
         assertEquals(GameView.Mode.TITLE, game.mode)
 
         tour(mapOf("marsh" to listOf(0, 3), "light" to listOf(1, 3), "lagoon" to listOf(1, 3), "wreck" to listOf(1, 2),
-            "ember" to listOf(3), "frost" to listOf(2), "temple" to listOf(0, 1), "bluff" to listOf(1, 2, 5)))
+            "ember" to listOf(3), "frost" to listOf(2), "temple" to listOf(0, 1), "bluff" to listOf(1, 2, 5),
+            "cove2" to listOf(0), "light2" to listOf(2), "temple2" to listOf(1), "frost2" to listOf(0)))
         assertTrue("labels that don't fit: ${game.textOverflows}", game.textOverflows.isEmpty())
     }
 }
@@ -90,10 +91,11 @@ class NewCourseTourTest : UiHarness() {
     @Test fun theGeneratedCourses() {
         openEveryCourse()
         tour(mapOf("oasis" to listOf(0, 2), "mushroom" to listOf(0, 6), "carnival" to listOf(0, 8), "sky" to listOf(0, 6), "clock" to listOf(0, 2),
-            "mangrove" to listOf(0, 1), "crystal" to listOf(0, 4), "autumn" to listOf(0, 2), "zen" to listOf(0), "starfall" to listOf(0, 3)))
+            "mangrove" to listOf(0, 1), "crystal" to listOf(0, 4), "autumn" to listOf(0, 2), "zen" to listOf(0), "starfall" to listOf(0, 3), "oasis2" to listOf(0, 8),
+            "carnival2" to listOf(0), "clock2" to listOf(4), "crystal2" to listOf(0), "starfall2" to listOf(8)))
         // A whole nine-hole round, to the scorecard: the card strip and scorecard fit nine holes.
         assertEquals(GameView.Mode.TITLE, game.mode)
-        while (game.courseForTest.id != "zen") press(GameView.B_PREV_COURSE)
+        goTo("zen")
         press(GameView.B_PLAY)
         runUntil(4000) { !game.busy }
         val course = game.course
@@ -115,5 +117,50 @@ class NewCourseTourTest : UiHarness() {
         assertTrue(scores.all { it > 0 })
         println("zen round: ${scores.toList()} = ${scores.sum()} (par ${course.par})")
         assertTrue("labels that don't fit: ${game.textOverflows}", game.textOverflows.isEmpty())
+    }
+}
+
+/** A second round: shown locked on its course's card until a round of that course is finished. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "w411dp-h914dp-420dpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class SecondRoundTest : UiHarness() {
+
+    private fun launch(oasisFinished: Boolean) {
+        val e = org.robolectric.RuntimeEnvironment.getApplication().getSharedPreferences("golf", android.content.Context.MODE_PRIVATE).edit().clear()
+        // Every course up to Mirage Oasis is open.
+        for (c in com.theprobyte.golfalone.game.Holes.COURSES.takeWhile { it.id != "oasis" }) e.putInt("course_${c.id}", 30)
+        if (oasisFinished) e.putInt("course_oasis", 40)
+        e.putString("last_course", "oasis").putBoolean("save_v2", true).commit()
+        game = Robolectric.buildActivity(MainActivity::class.java).setup().get().game
+        game.dispatchApplyWindowInsets(pixelInsets())
+        run(600)
+    }
+
+    @Test fun lockedUntilTheFirstRoundIsFinished() {
+        launch(oasisFinished = false)
+        goTo("oasis2")
+        assertEquals("oasis2", game.courseForTest.id)
+        run(400)
+        frame("ii-locked")
+        press(GameView.B_PLAY)
+        assertEquals("a locked second round doesn't start", GameView.Mode.TITLE, game.mode)
+        press(GameView.B_VARIANT)
+        assertEquals("oasis", game.courseForTest.id)
+        assertTrue("labels that don't fit: ${game.textOverflows}", game.textOverflows.isEmpty())
+    }
+
+    @Test fun openOnceItIs() {
+        launch(oasisFinished = true)
+        goTo("oasis2")
+        assertEquals("oasis2", game.courseForTest.id)
+        run(400)
+        frame("ii-open")
+        press(GameView.B_PLAY)
+        runUntil(4000) { !game.busy }
+        assertEquals(GameView.Mode.PLAY, game.mode)
+        assertTrue(game.course.holes.contains(game.hole))
+        run(300)
+        frame("ii-tee")
     }
 }

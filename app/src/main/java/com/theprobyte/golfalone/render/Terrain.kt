@@ -318,6 +318,35 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
 
     private fun k(x: Int, y: Int): Byte = if (x < 0 || y < 0 || x >= w || y >= h) K_WATER else kind[y * w + x]
 
+    /** Each course's own shore face (rows 1-3 below the lip), or null for the sandy default. */
+    private fun styledBank(x: Int, y: Int, row: Int): Int? = when (hole.style) {
+        "desert" -> when (row) { // sandstone in strata
+            1 -> Palette.SANDS[3]; 2 -> if (y % 2 == 0) Palette.SANDS[2] else Palette.SANDS[1]; else -> Palette.SANDS[0]
+        }
+        "mushroom" -> when (row) { // dark loam, the odd glowing cap in it
+            1 -> Palette.GRASS[1]; 2 -> if (hash(x, y, 120) < 0.07f) 0xFFD878E0.toInt() else Palette.WOODS[0]; else -> Palette.darker(Palette.WOODS[0])
+        }
+        "mangrove" -> when (row) { // roots down into the water
+            1 -> Palette.GRASS[1]; 2 -> if (x % 3 == 0) Palette.WOODS[2] else Palette.WOODS[0]; else -> if (x % 3 == 0) Palette.WOODS[1] else Palette.darker(Palette.WOODS[0])
+        }
+        "carnival" -> when (row) { // the pier's edge on its pilings
+            1 -> Palette.WOODS[4]; 2 -> if (x % 6 < 2) Palette.WOODS[2] else Palette.WOODS[0]; else -> if (x % 6 < 2) Palette.WOODS[1] else Palette.INK_SHADOW
+        }
+        "clock" -> when (row) { // a brass plinth with rivets
+            1 -> Palette.lerp(Palette.SANDS[3], Palette.WOODS[3], 0.4f); 2 -> if (x % 6 == 0) Palette.PAPER[2] else Palette.lerp(Palette.SANDS[1], Palette.WOODS[1], 0.5f); else -> Palette.WOODS[0]
+        }
+        "crystal" -> when (row) { // cave rock with crystals in it
+            1 -> Palette.STONES[2]; 2 -> if (hash(x, y, 121) < 0.1f) 0xFF9AE8F0.toInt() else Palette.STONES[1]; else -> Palette.STONES[0]
+        }
+        "zen" -> when (row) { // cut stone blocks
+            1 -> Palette.STONES[3]; 2 -> if (x % 8 == 0) Palette.STONES[1] else Palette.STONES[2]; else -> Palette.STONES[0]
+        }
+        "autumn" -> when (row) { // earth with pebbles
+            1 -> Palette.GRASS[2]; 2 -> if (hash(x, y, 122) < 0.12f) Palette.STONES[2] else Palette.WOODS[1]; else -> Palette.WOODS[0]
+        }
+        else -> null
+    }
+
     private fun basePixel(x: Int, y: Int): Int {
         val i = y * w + x
         val tx = x / TILE
@@ -338,6 +367,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
             if (bank[i] > 0 && hole.style == "frost") return when (bank[i].toInt()) { // snow over ice
                 1 -> Palette.PAPER[2]; 2 -> Palette.lerp(Palette.SEA[4], Palette.PAPER[2], 0.4f); else -> Palette.SEA[3]
             }
+            if (bank[i] > 0) styledBank(x, y, bank[i].toInt())?.let { return it }
             when (bank[i].toInt()) { // the island's bank face, in strata, with grass hanging over the lip
                 1 -> return if (hash(x, y, 81) < 0.22f) Palette.ROUGH_DARK else Palette.BANK
                 2 -> return if ((x * 7 + y) % 11 == 0) Palette.BANK else Palette.BANK_DARK
@@ -613,7 +643,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         val base = when {
             d < 3f -> Palette.lerp(Palette.SEA[5], 0xFFFFFFFF.toInt(), 0.5f)
             d < 10f -> Palette.lerp(Palette.SEA[4], Palette.SEA[5], 0.6f)
-            else -> return skyAt(x, y) // the same as the open sky beyond the map, so it meets it seamlessly
+            else -> return 0 // see-through: the open sky (and its far clouds) beyond the map shows here, without a seam
         }
         return base
     }
@@ -886,10 +916,10 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                         if (kind[i] != K_ROUGH || edge[i] < 4f) ok = false
                     }
                     if (ok) {
-                        val bush = arrayOf(".mm.", "mllm", "dmmd")
+                        val bush = SCENERY[hole.style] ?: SCENERY.getValue("")
                         for (yy in 0..2) for (xx in 0..3) {
                             val ch = bush[yy][xx]
-                            if (ch != '.') px[(y + yy) * w + x + xx] = when (ch) { 'l' -> Palette.LEAF[3]; 'm' -> Palette.LEAF[2]; else -> Palette.LEAF[1] }
+                            if (ch != '.') px[(y + yy) * w + x + xx] = sceneryColour(ch)
                         }
                     }
                 }
@@ -1128,6 +1158,8 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                 1 -> return Palette.MID
                 2 -> return Palette.SHALLOW
             }
+            val sd = seaDetail(x, y, f)
+            if (sd != 0) return sd
         }
         return 0
     }
@@ -1203,11 +1235,39 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         val px = IntArray(tw * th)
         val src = IntArray(w * h)
         ground.getPixels(src, 0, w, 0, 0, w, h)
-        for (y in 0 until th) for (x in 0 until tw) px[y * tw + x] = src[(y * step + step / 2) * w + x * step + step / 2]
+        for (y in 0 until th) for (x in 0 until tw) {
+            val sx = x * step + step / 2
+            val sy = y * step + step / 2
+            val v = src[sy * w + sx]
+            px[y * tw + x] = if (v == 0) skyAt(sx, sy) else v // the open sky is see-through on the map itself
+        }
         return Pix.bitmap(tw, th, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, tw, 0, 0, tw, th) }
     }
 
+    /** The colours of the scenery grids in [SCENERY]. */
+    private fun sceneryColour(ch: Char): Int = when (ch) {
+        'l' -> Palette.LEAF[3]; 'm' -> Palette.LEAF[2]; 'd' -> Palette.LEAF[1]
+        's' -> Palette.SANDS[1]; 'S' -> Palette.SANDS[3]; 'g' -> Palette.GRASS[2]
+        'r' -> 0xFFB050C0.toInt(); 'w' -> Palette.PAPER[2]; 'W' -> Palette.PAPER[3]
+        'y' -> Palette.GOLD; 'f' -> Palette.FLAG; 'b' -> Palette.SEA[3]
+        'c' -> 0xFF9AE8F0.toInt(); 'k' -> Palette.STONES[1]; 'K' -> Palette.STONES[2]; 'L' -> Palette.STONES[3]
+        'o' -> Palette.WOODS[2]; 'O' -> Palette.WOODS[0]
+        else -> Palette.LEAF[1]
+    }
+
     companion object {
+        /** Low scenery in the rough, per course style (4×3; never anything that looks like a hazard). */
+        private val SCENERY = mapOf(
+            "" to arrayOf(".mm.", "mllm", "dmmd"),
+            "desert" to arrayOf("s.s.", ".gs.", "sgg."),          // a dry shrub
+            "mushroom" to arrayOf("r..r", "rr.w", "w..w"),        // little toadstools
+            "carnival" to arrayOf("y..f", ".b..", "f.y."),        // dropped confetti
+            "clock" to arrayOf(".SS.", "SOOS", ".SS."),           // a stray cog
+            "mangrove" to arrayOf("l.l.", "l.ll", "dddd"),        // reeds
+            "crystal" to arrayOf(".c..", "cWc.", "kkK."),         // small crystals
+            "autumn" to arrayOf(".oo.", "oWWo", ".w.."),          // a toadstool
+            "zen" to arrayOf(".KK.", "KLLK", ".KK."),             // a smooth stone
+        )
         const val FRAMES = 8
         /** The wash's phase on each water frame (in and out once per loop). */
         private val PHASE = FloatArray(FRAMES) { f -> 0.5f + 0.5f * kotlin.math.sin(2f * Math.PI.toFloat() * f / FRAMES) }
@@ -1229,8 +1289,9 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                 val gx = Math.floorMod(cell, 6)
                 if (hash(gx, gy, 74) > 0.5f) continue // only about half the cells carry a crest
                 val life = (f + (hash(gx, gy, 73) * 8).toInt()) % 8
-                val len = intArrayOf(0, 2, 3, 4, 4, 3, 2, 0)[life]
+                var len = intArrayOf(0, 2, 3, 4, 4, 3, 2, 0)[life]
                 if (len == 0) continue
+                if (Palette.mood == Mood.STORM) len += 2 // a storm's crests run longer
                 val jx = cell * 13 + (hash(gx, gy, 71) * 8).toInt() - life
                 val jy = gy0 * 9 + (hash(gx, gy, 72) * 6).toInt()
                 if (x >= jx && x < jx + len && y == jy) {
@@ -1262,11 +1323,64 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
                     px[y * SEA_W + x] = if (style == "sky") skyAt(x, y) else when (crest(x, y, f)) {
                         1 -> Palette.MID
                         2 -> Palette.SHALLOW
-                        else -> Palette.DEEP
+                        else -> seaDetail(x, y, f).takeIf { it != 0 } ?: Palette.DEEP
                     }
                 }
                 Pix.bitmap(SEA_W, SEA_H).apply { setPixels(px, 0, SEA_W, 0, 0, SEA_W, SEA_H) }
             }
+
+        /**
+         * Detail on open water between the crests, the same on the map and the sea beyond it
+         * (it repeats every [SEA_W]×[SEA_H]): a slow dark swell everywhere, and by time of day
+         * star glints, the aurora's green, ice floes or glowing specks. Never brighter than the
+         * shallows or bigger than the ball, so it can't be taken for land.
+         */
+        fun seaDetail(x: Int, y: Int, f: Int): Int {
+            val tx = Math.floorMod(x, SEA_W)
+            val ty = Math.floorMod(y, SEA_H)
+            val sx = tx / 26
+            val sy = ty / 12
+            val jx = sx * 26 + (hash(sx, sy, 130) * 14).toInt()
+            val jy = sy * 12 + (hash(sx, sy, 131) * 9).toInt()
+            if (hash(sx, sy, 132) < 0.5f && ty == jy && tx >= jx && tx < jx + 6 + (hash(sx, sy, 133) * 5).toInt()) return Palette.darker(Palette.DEEP)
+            val cx = tx / 13
+            val cy = ty / 9
+            val px = cx * 13 + 2 + (hash(cx, cy, 134) * 9).toInt()
+            val py = cy * 9 + 1 + (hash(cx, cy, 135) * 7).toInt()
+            val on = ((hash(cx, cy, 136) * FRAMES).toInt() + f) % FRAMES < 5
+            return when (Palette.mood) {
+                Mood.STARRY, Mood.NIGHT, Mood.DESERT_NIGHT, Mood.MOON_GARDEN, Mood.SPORELIGHT, Mood.NEON ->
+                    if (hash(cx, cy, 137) < 0.35f && on && tx == px && ty == py) Palette.SHALLOW else 0
+                Mood.AURORA ->
+                    if (hash(cx, cy, 137) < 0.4f && on && tx == px && ty == py) Palette.lerp(Palette.SHALLOW, 0xFF70E8A8.toInt(), 0.5f) else 0
+                Mood.COLD, Mood.FIRST_FROST ->
+                    if (hash(cx, cy, 137) < 0.3f && ty == py && tx >= px && tx < px + 2 + (hash(cx, cy, 138) * 2).toInt()) Palette.lerp(Palette.MID, Palette.SHOAL, 0.5f) else 0
+                Mood.CAVE, Mood.DEEP_CAVE ->
+                    if (hash(cx, cy, 137) < 0.3f && on && tx == px && ty == py) Palette.lerp(Palette.DEEP, 0xFF7AD0E0.toInt(), 0.55f) else 0
+                else -> 0
+            }
+        }
+
+        private var farClouds: Bitmap? = null
+        private var farMood: Mood? = null
+
+        /**
+         * Skyreach's far cloud layer: faint wisps on a tile half the sea's size, drawn at half
+         * the camera's speed. Half-size, so the glide between holes (which lines the sea up)
+         * lines this up too.
+         */
+        fun farClouds(): Bitmap {
+            farClouds?.let { if (farMood == Palette.mood) return it }
+            val w = SEA_W / 2
+            val h = SEA_H / 2
+            val px = IntArray(w * h)
+            val col = Palette.alpha(0xFFFFFFFF.toInt(), 40)
+            for (y in 0 until h) for (x in 0 until w) {
+                val k = hash((x + y / 2) / 9, y / 6, 140)
+                if (k < 0.18f && (x + y) % 2 == 0) px[y * w + x] = col
+            }
+            return Pix.bitmap(w, h).apply { setPixels(px, 0, w, 0, 0, w, h) }.also { farClouds = it; farMood = Palette.mood }
+        }
 
         /** Open sky far below: haze with cloud banks, repeating every [SEA_W]×[SEA_H] so it tiles. */
         fun skyAt(x: Int, y: Int): Int {

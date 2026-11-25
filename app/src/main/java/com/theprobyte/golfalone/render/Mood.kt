@@ -4,8 +4,10 @@ package com.theprobyte.golfalone.render
  * Time of day for a course, applied as a swap of the world's colour ramps (never a
  * filter over the picture), so the pixel art stays crisp and every ramp step stays distinct.
  * [hi] tints the light end of a ramp and [lo] the shaded end, by [amtHi] and [amtLo].
+ * A mood can take another's own ground and water colours ([ramps]), so a course's second round
+ * keeps its look at a new time of day.
  */
-enum class Mood(val hi: Int, val lo: Int, val amtHi: Float, val amtLo: Float) {
+enum class Mood(val hi: Int, val lo: Int, val amtHi: Float, val amtLo: Float, val ramps: Mood? = null) {
     DAY(0, 0, 0f, 0f),
     /** First light: peach highlights, lilac shade. */
     DAWN(0xFFFFC8CE.toInt(), 0xFF46347A.toInt(), 0.16f, 0.24f),
@@ -32,7 +34,29 @@ enum class Mood(val hi: Int, val lo: Int, val amtHi: Float, val amtLo: Float) {
     CAVE(0xFFC0F0FF.toInt(), 0xFF140A28.toInt(), 0.15f, 0.35f),
     AUTUMN(0xFFFFC070.toInt(), 0xFF3A2030.toInt(), 0.2f, 0.25f),
     SAKURA(0xFFFFE0F0.toInt(), 0xFF304050.toInt(), 0.12f, 0.2f),
-    STARRY(0xFFB0C8FF.toInt(), 0xFF080C28.toInt(), 0.15f, 0.4f);
+    STARRY(0xFFB0C8FF.toInt(), 0xFF080C28.toInt(), 0.15f, 0.4f),
+
+    // Second rounds: the same places at another hour.
+    /** Mirage Oasis II: the desert under a cold moon. */
+    DESERT_NIGHT(0xFFC8D8FF.toInt(), 0xFF101838.toInt(), 0.18f, 0.5f, DESERT),
+    /** Mushroom Hollow II: past midnight, the caps glowing mint. */
+    SPORELIGHT(0xFFB8F0D0.toInt(), 0xFF180C30.toInt(), 0.16f, 0.36f, TWILIGHT),
+    /** Carnival Pier II: the pier after dark under pink neon. */
+    NEON(0xFFFF9AE0.toInt(), 0xFF120A30.toInt(), 0.16f, 0.34f, EVENING),
+    /** Skyreach II: the islands at sunset. */
+    SUNSET_SKY(0xFFFFB070.toInt(), 0xFF5A3A70.toInt(), 0.18f, 0.22f, SKY),
+    /** Clockwork Ruins II: rusted, in a red evening light. */
+    RUST(0xFFFFB080.toInt(), 0xFF3A1A18.toInt(), 0.16f, 0.3f, BRONZE),
+    /** Mangrove Maze II: a pale morning mist. */
+    MIST(0xFFE0E8E0.toInt(), 0xFF2A3A38.toInt(), 0.22f, 0.25f, SWAMP),
+    /** Crystal Caverns II: deeper and darker, lit cold blue. */
+    DEEP_CAVE(0xFFA0C0FF.toInt(), 0xFF0A0618.toInt(), 0.14f, 0.4f, CAVE),
+    /** Autumn Woods II: the first frost on the gold. */
+    FIRST_FROST(0xFFE8F4FF.toInt(), 0xFF3A3050.toInt(), 0.2f, 0.25f, AUTUMN),
+    /** Zen Garden II: the garden by moonlight. */
+    MOON_GARDEN(0xFFD8D8F8.toInt(), 0xFF2A1E3A.toInt(), 0.14f, 0.2f, SAKURA),
+    /** Starfall Atoll II: under the aurora. */
+    AURORA(0xFF9AFFC8.toInt(), 0xFF100828.toInt(), 0.15f, 0.38f, STARRY);
 
     /** One colour through this mood: weighted by its brightness towards [hi], or towards [lo]. */
     fun grade(c: Int): Int {

@@ -22,6 +22,13 @@ FORK = dict(oasis='~', mushroom='r', carnival='#', sky='~', clock='#', mangrove=
 GUARD = dict(oasis='Q', mushroom='s', carnival='s', sky='~', clock='s', mangrove='m', crystal='s', autumn='n', zen='s', starfall='s')
 EDGE = dict(oasis='P', autumn='P', mangrove='P', mushroom='o', zen='#')
 
+# Second rounds draw on more of the game's pieces than their first versions.
+HARD_EXTRA = dict(oasis=['walls', 'stream', 'pond', 'kick'], mushroom=['walls', 'ventgap', 'mud', 'kick'],
+                  carnival=['pulse', 'portalgap', 'gate'], sky=['bridge', 'boost', 'wells', 'ridge'],
+                  clock=['bumpers', 'portalgap', 'kickgap'], mangrove=['bridge', 'gate', 'vines', 'mud'],
+                  crystal=['kickgap', 'tunnel', 'bumpers'], autumn=['bridge', 'mill', 'walls'],
+                  zen=['gate', 'lily', 'walls'], starfall=['pulse', 'ventgap', 'mill'])
+
 class Hole:
     def __init__(self, m, extra):
         self.m, self.extra = m, extra
@@ -113,10 +120,13 @@ def challenge(kind, m, rnd, pts, ya, yb, extra):
             for x in range(lo, hi + 1):
                 if rnd.random() < 0.45: m.g[yc][x] = '.'
             m.g[yc][px] = '.'
+            # No lone stones on the shore: the island's edge stays rough.
+            m.g[yc][lo] = ','
+            m.g[yc][hi] = ','
     elif kind == 'quick':
-        disc_land(m, px + side * rnd.uniform(0.5, 2), yc, rnd.uniform(1.4, 2.3), 'Q')
+        disc_land(m, px + side * rnd.uniform(0.5, 2), yc, rnd.uniform(1.4, 2.3), 'Q', only='.')
     elif kind == 'sandfield':
-        for _ in range(rnd.randint(2, 3)): disc_land(m, px + rnd.uniform(-3, 3), yc + rnd.uniform(-3, 3), rnd.uniform(1, 1.8), 's')
+        for _ in range(rnd.randint(2, 3)): disc_land(m, px + rnd.uniform(-3, 3), yc + rnd.uniform(-3, 3), rnd.uniform(1, 1.8), 's', only='.')
     elif kind == 'gravel':
         for y in range(yc - 1, yc + 1):
             for x in land_cols(m, y): m.g[y][x] = 's'
@@ -128,11 +138,11 @@ def challenge(kind, m, rnd, pts, ya, yb, extra):
     elif kind == 'bumpers':
         for _ in range(rnd.randint(3, 5)): put_land(m, int(px + rnd.uniform(-3, 3)), int(yc + rnd.uniform(-3, 3)), 'o')
     elif kind == 'vines':
-        disc_land(m, px + side * 2, yc, rnd.uniform(1.4, 2.2), 'r')
+        disc_land(m, px + side * 2, yc, rnd.uniform(1.4, 2.2), 'r', only='.')
     elif kind == 'mud':
-        disc_land(m, px + side * 1.5, yc, rnd.uniform(1.2, 2), 'm')
+        disc_land(m, px + side * 1.5, yc, rnd.uniform(1.2, 2), 'm', only='.')
     elif kind == 'leaves':
-        for _ in range(rnd.randint(2, 3)): disc_land(m, px + rnd.uniform(-3, 3), yc + rnd.uniform(-2, 2), 1.1, 'n')
+        for _ in range(rnd.randint(2, 3)): disc_land(m, px + rnd.uniform(-3, 3), yc + rnd.uniform(-2, 2), 1.1, 'n', only='.')
     elif kind == 'kick':
         put_land(m, px, yc + 2, 'Y')
     elif kind == 'boost':
@@ -144,7 +154,7 @@ def challenge(kind, m, rnd, pts, ya, yb, extra):
     elif kind == 'logs':
         x0 = px + side * 3
         for k in range(4):
-            put_land(m, int(x0 - side * k), yc - 2 + k, 'w')
+            if m.g[yc - 2 + k][int(x0 - side * k)] == '.': put_land(m, int(x0 - side * k), yc - 2 + k, 'w')  # never on the shore
     elif kind == 'ridge':
         for y in range(yb, ya + 1):
             for x in land_cols(m, y):
@@ -159,11 +169,18 @@ def challenge(kind, m, rnd, pts, ya, yb, extra):
                 for x in range(lo + 1, hi):
                     if m.g[y][x] in LAND: m.g[y][x] = ch
     elif kind == 'slope':
-        pass  # done on the green in make()
+        # A tilt across the fairway, falling towards one shore.
+        disc_land(m, px, yc, rnd.uniform(2, 3), rnd.choice('<>'), only='.')
 
-def make(theme, seed, size, teach=False):
+# Hard holes pair a band across the fairway with a scatter on the tee side of long stretches.
+BAND = {'ventgap', 'kickgap', 'portalgap', 'bridge', 'deckgap', 'lily', 'mill', 'pulse', 'gate', 'tunnel', 'walls', 'stream', 'conveyor', 'ridge', 'gravel'}
+SCATTER = {'quick', 'sandfield', 'pond', 'posts', 'bumpers', 'vines', 'mud', 'leaves', 'trees', 'stones', 'wells', 'logs', 'kick', 'boost', 'slope'}
+
+def make(theme, seed, size, teach=False, hard=False):
+    """A hole for [theme]. [hard] (second rounds): a narrower fairway, a challenge on every stretch
+    (two on long ones), a smaller green with the cup off centre by its guard, and a shaped coast."""
     T = THEMES[theme]
-    rnd = random.Random(seed * 7919 + zlib.crc32(theme.encode()) % 1000)
+    rnd = random.Random(seed * 7919 + zlib.crc32(theme.encode()) % 1000 + (500000 if hard else 0))
     W = 20 if rnd.random() < 0.6 else 22
     H = {'S': rnd.randint(30, 36), 'M': rnd.randint(44, 52), 'L': rnd.randint(60, 70), 'X': rnd.randint(64, 70)}[size]
     m = Map(W, H)
@@ -177,11 +194,31 @@ def make(theme, seed, size, teach=False):
     gx = rnd.uniform(7, W - 8)
     pts.append((gx, greenY + 2))
     for (a, b) in zip(pts, pts[1:]):
-        m.line(a[0], a[1], b[0], b[1], '.', rnd.uniform(2.2, 2.9) if size == 'X' else rnd.uniform(2.3, 4.0))
-    kinds = [T['sig']] if teach else [T['sig']] + [rnd.choice(T['pool'] + ['fork', 'fork']) for _ in range(nb - 1)]
-    if not teach and nb == 1 and rnd.random() < 0.5: kinds = [rnd.choice(T['pool'] + ['fork'])]
-    rnd.shuffle(kinds)
+        if hard: r = rnd.uniform(1.8, 2.4) if size == 'X' else rnd.uniform(1.8, 2.6)
+        else: r = rnd.uniform(2.2, 2.9) if size == 'X' else rnd.uniform(2.3, 4.0)
+        m.line(a[0], a[1], b[0], b[1], '.', r)
     stretch = [(int(pts[k][1]) - 2, int(pts[k + 1][1]) + 2) for k in range(len(pts) - 1)]
+    pairs = {}
+    if hard:
+        # Side lobes: rounded bays of fairway off the line, so the island isn't a strip.
+        for _ in range(rnd.randint(1, 3)):
+            k = rnd.randrange(len(pts) - 1)
+            t = rnd.uniform(0.25, 0.75)
+            lx = pts[k][0] + (pts[k + 1][0] - pts[k][0]) * t
+            ly = pts[k][1] + (pts[k + 1][1] - pts[k][1]) * t
+            side = rnd.choice([-1, 1])
+            m.disc(max(3.5, min(W - 4.5, lx + side * rnd.uniform(2.5, 4))), ly, rnd.uniform(2, 3.2), '.')
+        pool = T['pool'] + HARD_EXTRA.get(theme, []) + ['fork']
+        kinds = [rnd.choice(pool) for _ in stretch]
+        kinds[rnd.randrange(len(kinds))] = T['sig']
+        for k, (ya, yb) in enumerate(stretch):
+            if ya - yb >= 14 and kinds[k] != 'fork':
+                other = [c for c in pool if c != 'fork' and ((c in BAND) != (kinds[k] in BAND))]
+                if other: pairs[k] = rnd.choice(other)
+    else:
+        kinds = [T['sig']] if teach else [T['sig']] + [rnd.choice(T['pool'] + ['fork', 'fork']) for _ in range(nb - 1)]
+        if not teach and nb == 1 and rnd.random() < 0.5: kinds = [rnd.choice(T['pool'] + ['fork'])]
+        rnd.shuffle(kinds)
     forks = []
     for kind, (ya, yb) in zip(kinds, stretch):
         if kind != 'fork': continue
@@ -190,11 +227,18 @@ def make(theme, seed, size, teach=False):
         cx = max(2 + r, min(W - 3 - r, path_x(pts, yc)))
         m.disc(cx, yc, r, '.')
         forks.append((cx, yc))
-    grx, gry = rnd.uniform(3.4, 4.6), rnd.uniform(2.8, 3.4)
+    grx, gry = (rnd.uniform(2.6, 3.4), rnd.uniform(2.2, 2.8)) if hard else (rnd.uniform(3.4, 4.6), rnd.uniform(2.8, 3.4))
     m.oval(gx, greenY, grx + 1.2, gry + 1, '.')
     m.oval(gx, greenY, grx, gry, ':')
     m.oval(pts[0][0], teeY, 4, 2.6, '.')
     m.border()
+    if hard:
+        # A rough border one to three tiles wide in places.
+        rim = [(x, y) for y in range(1, H - 1) for x in range(1, W - 1) if m.g[y][x] == ',']
+        for x, y in rnd.sample(rim, min(len(rim), rnd.randint(3, 7))):
+            for yy in range(y - 2, y + 3):
+                for xx in range(x - 2, x + 3):
+                    if 1 <= xx < W - 1 and 1 <= yy < H - 1 and m.g[yy][xx] == '~' and (xx - x) ** 2 + (yy - y) ** 2 <= 2.5: m.g[yy][xx] = ','
     extra = {'style': T['style']}
     for cx, yc in forks:
         core = FORK[theme]
@@ -204,23 +248,33 @@ def make(theme, seed, size, teach=False):
             for y in range(yc - 2, yc + 3):
                 for x in range(m.w):
                     if ((x - cx) / 2.3) ** 2 + ((y - yc) / 1.9) ** 2 <= 1: m.g[y][x] = core
-    extra['kinds'] = kinds[:len(stretch)]
-    for kind, (ya, yb) in zip(kinds, stretch):
+    extra['kinds'] = kinds[:len(stretch)] + list(pairs.values())
+    for k, (kind, (ya, yb)) in enumerate(zip(kinds, stretch)):
         if kind == 'fork': continue
-        challenge(kind, m, rnd, pts, ya, yb, extra)
-    if rnd.random() < 0.75:
-        sd = rnd.choice([-1, 1])
+        if k in pairs:
+            # A long stretch: the band in its far half, the scatter on the tee side.
+            ym = (ya + yb) // 2
+            band_k, scat_k = (kind, pairs[k]) if kind in BAND else (pairs[k], kind)
+            challenge(band_k, m, rnd, pts, ym, yb, extra)
+            challenge(scat_k, m, rnd, pts, ya, ym, extra)
+        else:
+            challenge(kind, m, rnd, pts, ya, yb, extra)
+    sd = rnd.choice([-1, 1])
+    if hard or rnd.random() < 0.75:
         disc_land(m, gx + sd * (grx + 1.3), greenY + rnd.uniform(-0.5, 2), rnd.uniform(1.0, 1.5), GUARD[theme], only='.')
+    if hard and rnd.random() < 0.5:
+        disc_land(m, gx - sd * (grx + 1.3), greenY + rnd.uniform(-0.5, 2), rnd.uniform(1.0, 1.4), GUARD[theme], only='.')
     if theme in EDGE:
         edge = [(x, y) for y in range(greenY + 5, teeY - 3) for x in range(1, W - 1)
                 if m.g[y][x] == '.' and (m.g[y][x - 1] == ',' or m.g[y][x + 1] == ',')]
         for x, y in rnd.sample(edge, min(len(edge), rnd.randint(3, 7))): m.g[y][x] = EDGE[theme]
-    if 'slope' in kinds or (not teach and rnd.random() < 0.3):
+    if 'slope' in kinds or (not teach and rnd.random() < (0.7 if hard else 0.3)):
         d = rnd.choice('^v<>')
         for y in range(greenY - 3, greenY + 4):
             for x in range(W):
                 if m.g[y][x] == ':' and rnd.random() < 0.55 and (x + y) % 2 == 0: m.g[y][x] = d
-    cx, cy = int(round(gx)), greenY
+    cx, cy = int(round(gx + (sd * rnd.uniform(1, 1.8) if hard else 0))), greenY
+    if m.g[cy][cx] not in ':^v<>': cx = int(round(gx))
     m.g[cy][cx] = 'O'
     m.g[teeY][int(round(pts[0][0]))] = 'T'
     # Filters: margins of sea, no portal left unpaired.

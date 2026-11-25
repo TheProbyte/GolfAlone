@@ -1,15 +1,22 @@
 package com.theprobyte.golfalone.game
 
-/** A named set of holes played in order. */
+/**
+ * A named set of holes played in order. A harder second round names its first version as
+ * [base]: it opens once a round of that is finished, sits outside the unlock chain, and shares
+ * its life and sound ([theme]).
+ */
 class Course(
     val id: String,
     val name: String,
     val holes: List<Hole>,
     val mood: com.theprobyte.golfalone.render.Mood = com.theprobyte.golfalone.render.Mood.DAY,
     style: String = "",
+    val base: Course? = null,
 ) {
     init { for (h in holes) h.style = style }
     val par get() = holes.sumOf { it.par }
+    /** The course whose wildlife and sounds this one has. */
+    val theme: String get() = base?.theme ?: id
 }
 
 /** The hand-made holes. Each one is checked by `HoleCompletableTest`. */
@@ -298,8 +305,18 @@ object Holes {
     val COURSES: List<Course> by lazy { listOf(COVE, Saltmarsh.COURSE, Lighthouse.COURSE, Lagoon.COURSE, Wreck.COURSE, Ember.COURSE, Frost.COURSE, Temple.COURSE, Bluff.COURSE,
         Oasis.COURSE, Mushroom.COURSE, Carnival.COURSE, Skyreach.COURSE, Clockwork.COURSE, Mangrove.COURSE, Crystal.COURSE, Autumn.COURSE, Zen.COURSE, Starfall.COURSE) }
 
+    /** The harder second rounds, each opened by finishing a round of its [Course.base]. */
+    val SECONDS: List<Course> by lazy {
+        listOf(CoveII.COURSE, SaltmarshII.COURSE, LighthouseII.COURSE, LagoonII.COURSE, WreckII.COURSE, EmberII.COURSE, FrostII.COURSE,
+            TempleII.COURSE, BluffII.COURSE, OasisII.COURSE, MushroomII.COURSE, CarnivalII.COURSE, SkyreachII.COURSE, ClockworkII.COURSE,
+            MangroveII.COURSE, CrystalII.COURSE, AutumnII.COURSE, ZenII.COURSE, StarfallII.COURSE)
+    }
+
     /** Every course there is, in the unlock chain or not (second rounds sit outside it). */
-    val allCourses: List<Course> get() = COURSES
+    val allCourses: List<Course> get() = COURSES + SECONDS
+
+    /** [c]'s second round, or null if it has none (yet). */
+    fun secondOf(c: Course): Course? = SECONDS.firstOrNull { it.base === c }
 
     fun course(id: String): Course? = allCourses.firstOrNull { it.id == id }
 

@@ -26,6 +26,8 @@ class SpriteFx {
     val active: Boolean get() = t.any { it >= 0f }
 
     fun splash(x: Float, y: Float) = add(SPLASH, x, y, 0f, 0f, 0)
+    /** Quicksand taking the ball: it sinks, then the sand closes over it. */
+    fun sink(x: Float, y: Float) = add(SINK, x, y, 0f, 0f, 0)
     fun dust(x: Float, y: Float, colour: Int) = add(DUST, x, y, 0f, 0f, colour)
     /** [dx], [dy]: the shot's direction (unit). */
     fun swoosh(x: Float, y: Float, dx: Float, dy: Float) = add(SWOOSH, x, y, dx, dy, 0)
@@ -48,6 +50,7 @@ class SpriteFx {
                 SPLASH -> splashFrame(c, x, y, frame)
                 DUST -> dustFrame(c, x, y, frame, col[i])
                 SWOOSH -> swooshFrame(c, fx[i] - ix, fy[i] - iy, ux[i], uy[i], frame)
+                SINK -> sinkFrame(c, x, y, frame)
             }
         }
     }
@@ -87,6 +90,16 @@ class SpriteFx {
         if (f == 0) px(c, x, y + 2, cl)
     }
 
+    private fun sinkFrame(c: Canvas, x: Int, y: Int, f: Int) {
+        val sand = Palette.SANDS[1]
+        when (f) {
+            0 -> { rect(c, x - 2, y - 1, 5, 3, Palette.BALL); rect(c, x - 3, y + 1, 7, 1, sand) }      // half under
+            1 -> { rect(c, x - 1, y, 3, 2, Palette.BALL); rect(c, x - 3, y + 1, 7, 1, sand) }          // nearly gone
+            2 -> { Pix.ring(c, x + 0.5f, y + 0.5f, 2.5f, sand); px(c, x, y, Palette.BALL_SHADE) }   // the sand closes
+            else -> Pix.ring(c, x + 0.5f, y + 0.5f, 4f, Palette.alpha(sand, 140))
+        }
+    }
+
     private fun swooshFrame(c: Canvas, x: Float, y: Float, dx: Float, dy: Float, f: Int) {
         // An arc behind the ball, across the line of the shot.
         val back = if (f == 0) 4f else 7f
@@ -106,7 +119,8 @@ class SpriteFx {
         const val SPLASH = 0
         const val DUST = 1
         const val SWOOSH = 2
-        private val DUR = floatArrayOf(0.44f, 0.3f, 0.12f)
-        private val FRAMES = intArrayOf(4, 3, 2)
+        const val SINK = 3
+        private val DUR = floatArrayOf(0.44f, 0.3f, 0.12f, 0.5f)
+        private val FRAMES = intArrayOf(4, 3, 2, 4)
     }
 }

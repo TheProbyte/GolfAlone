@@ -120,8 +120,11 @@ internal fun GameView.drawFinal(c: Canvas) {
     val st = bottomSheet(c, h, modeT)
     smallText(c, course.name, lw / 2, st + 7, Palette.PAPER_INK_DIM)
     PixelFont.drawCentered(c, "SCORECARD", lw / 2, st + 15, Palette.PAPER_INK, 2, 0, Face.BIG)
-    val total = scores.sum()
-    val d = total - course.par
+    // The scores go on hole by hole, the total counting up with them.
+    val shown = if (reduceMotion) n else ((modeT - 0.2f) / 0.05f).toInt().coerceIn(0, n)
+    var total = 0
+    for (i in 0 until shown) total += scores[i]
+    val d = scores.sum() - course.par
 
     // Table: label column, a column per hole (narrower on longer courses), total, on ruled paper.
     val lx = 8
@@ -140,10 +143,10 @@ internal fun GameView.drawFinal(c: Canvas) {
     }
     row("HOLE", { i -> "${i + 1}" to Palette.PAPER_INK_DIM }, "TOT" to Palette.PAPER_INK_DIM)
     row("PAR", { i -> "${course.holes[i].par}" to Palette.PAPER_INK }, "${course.par}" to Palette.PAPER_INK)
-    row("YOU", { i -> "${scores[i]}" to resultInk(scores[i], course.holes[i].par) }, "$total" to (if (d <= 0) Palette.STAMP_RED else Palette.PAPER_INK))
-    for (i in 0 until n) Sprites.flagIcon(c, cx0 + i * cw + cw / 2 - 2, ry, flagColour(scores[i], course.holes[i].par), 8)
+    row("YOU", { i -> (if (i < shown) "${scores[i]}" else "") to resultInk(scores[i], course.holes[i].par) }, "$total" to (if (d <= 0) Palette.STAMP_RED else Palette.PAPER_INK))
+    for (i in 0 until shown) Sprites.flagIcon(c, cx0 + i * cw + cw / 2 - 2, ry, flagColour(scores[i], course.holes[i].par), 8)
     ry += 16
-    PixelFont.drawCentered(c, "${parText(d)} * $total SHOTS", lw / 2, ry, if (d <= 0) Palette.STAMP_RED else Palette.PAPER_INK, 2, 0, Face.BIG)
+    if (shown == n) PixelFont.drawCentered(c, "${parText(d)} * $total SHOTS", lw / 2, ry, if (d <= 0) Palette.STAMP_RED else Palette.PAPER_INK, 2, 0, Face.BIG)
     ry += 20
     val best = progress.courseBest()
     if (courseNewBest) bigText(c, "NEW COURSE BEST!", lw / 2, ry, Palette.STAMP_RED)

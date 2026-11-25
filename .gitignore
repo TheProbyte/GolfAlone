@@ -8,3 +8,4 @@ build/
 .kotlin/
 *.apk
 tools/holegen/cand_*
+__pycache__/

@@ -4,15 +4,16 @@ from gen2 import make, block, THEMES
 out, n = sys.argv[1], int(sys.argv[2])
 themes = sys.argv[3:] or list(THEMES)
 SIZES = __import__('os').environ.get('SIZES', 'SML')
+HARD = __import__('os').environ.get('HARD') == '1'
 HELPERS = 'YyXKV13B'
 with open(out, 'w') as f:
     k = 0
     for theme in themes:
         for seed in range(n):
             for size in SIZES:
-                h = make(theme, seed, size, teach=(seed < 4))
+                h = make(theme, seed, size, teach=(seed < 4 and not HARD), hard=HARD)
                 if not h: continue
-                id_ = f'{theme}-{size}-{seed}'
+                id_ = f'{theme}-{"H" if HARD else ""}{size}-{seed}'
                 f.write(block(id_, h)); k += 1
                 rows = h.m.rows()
                 if any(c in HELPERS for r in rows for c in r):

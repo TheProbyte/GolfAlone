@@ -80,7 +80,7 @@ object Palette {
     fun setMood(m: Mood) {
         if (m == mood) return
         for ((k, ramp) in worldRamps.withIndex()) {
-            val from = own[m]?.get(k) ?: base[k]
+            val from = own[m.ramps ?: m]?.get(k) ?: base[k]
             for (i in ramp.indices) ramp[i] = m.grade(from[i])
         }
         mood = m

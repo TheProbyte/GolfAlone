@@ -51,6 +51,8 @@ object Sprites {
             val rows = ballRows.mapIndexed { y, r -> if (y == sy) r.substring(0, sx) + "x" + r.substring(sx + 1) else r }
             Sprite("ball-$i", rows, ballColours)
         }
+            /** A hit ball, squashed for a frame. */
+            val ballSquash = Sprite("ball-squash", listOf("..ooo..", ".owwwso", "owwwsso", ".ossso.", "..ooo.."), ballColours)
             val ballShadow = Sprite("ball-shadow", ballRows.map { it.replace(Regex("[^.]"), "k") }, mapOf('k' to Palette.SHADOW))
             val ballGhost = Sprite("ball-ghost", listOf("..oo..", ".o..o.", "o....o", "o....o", ".o..o.", "..oo.."),
             mapOf('o' to Palette.alpha(Palette.BALL, 170)))
@@ -107,11 +109,12 @@ object Sprites {
     }
 
     /** The ball centred on ([x], [y]); [spin] picks the roll frame, [ghost] draws a faint ring (under a palm). */
-    fun ball(c: Canvas, x: Int, y: Int, spin: Int, ghost: Boolean = false, lift: Int = 0) {
+    fun ball(c: Canvas, x: Int, y: Int, spin: Int, ghost: Boolean = false, lift: Int = 0, squash: Boolean = false) {
         if (ghost) { b().ballGhost.draw(c, x - 3, y - 3 - lift); return }
         // In the air the shadow stays on the ground, offset a little further as the ball climbs.
         b().ballShadow.draw(c, x - 2 + lift / 6, y - 2 + lift / 8)
-        b().ballFrames[spin and 3].draw(c, x - 3, y - 3 - lift)
+        if (squash) b().ballSquash.draw(c, x - 3, y - 2 - lift)
+        else b().ballFrames[spin and 3].draw(c, x - 3, y - 3 - lift)
     }
 
     /** Flag on its pole above the cup at ([cx], [cy]); [wave] 0/1, [lift] raises it when holed. */

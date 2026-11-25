@@ -432,14 +432,21 @@ class Physics(val hole: Hole, val state: HoleState = HoleState(hole)) {
             val t = hole.at(px, py)
             if (coast.landDepth(px, py) >= BALL_R + 1f && !t.solid && !t.isRamp && !t.flows && !t.vent && !t.isLedge &&
                 t != Tile.QUICKSAND && !t.isKicker && t != Tile.PORTAL && t != Tile.BOOST &&
-                !nearOpenIce(px, py) && clearOfPosts(px, py)) return px to py
+                !nearOpenIce(px, py) && clearOfPosts(px, py) && clearOfRails(px, py)) return px to py
             k += 1f
         }
         // A current carried it in (no dry ground along its path), or its last dry spot is over
         // open ice: back to where the shot was played.
         val ld = hole.at(lastDryX, lastDryY)
         if (ld.flows || ld == Tile.QUICKSAND || ld == Tile.PORTAL || nearOpenIce(lastDryX, lastDryY)) return restX to restY
-        return if (coast.isLand(lastDryX, lastDryY)) lastDryX to lastDryY else restX to restY
+        return if (coast.isLand(lastDryX, lastDryY) && clearOfRails(lastDryX, lastDryY)) lastDryX to lastDryY else restX to restY
+    }
+
+    /** Whether a ball at ([px], [py]) is clear of every wall edge, log and boulder. */
+    private fun clearOfRails(px: Float, py: Float): Boolean {
+        val rails = hole.rails
+        for (i in 0 until rails.count) if (rails.distance(i, px, py) < rails.r[i] + BALL_R) return false
+        return true
     }
 
     private fun clearOfPosts(px: Float, py: Float): Boolean {

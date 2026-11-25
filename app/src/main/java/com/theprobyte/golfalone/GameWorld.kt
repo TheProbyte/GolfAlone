@@ -21,6 +21,7 @@ import com.theprobyte.golfalone.render.PixelFont.Face
 import com.theprobyte.golfalone.render.Sprites
 import com.theprobyte.golfalone.render.Terrain
 import kotlin.math.PI
+import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -44,6 +45,20 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
             sx += Terrain.SEA_W
         }
         sy += Terrain.SEA_H
+    }
+    // Skyreach: a fainter, further layer of cloud drifting past at half the camera's speed.
+    if (hole.style == "sky" && !reduceMotion) {
+        val far = Terrain.farClouds()
+        val fw = far.width
+        val fh = far.height
+        val ox = Math.floorMod(ix / 2, fw)
+        val oy = Math.floorMod(iy / 2, fh)
+        var fy = -oy
+        while (fy < lh + 1) {
+            var fx = -ox
+            while (fx < lw + 1) { c.drawBitmap(far, fx.toFloat(), fy.toFloat(), blit); fx += fw }
+            fy += fh
+        }
     }
     mark(GameView.PH_SEA)
     // A course just chosen on the title: open sea until its first map is ready.
@@ -105,8 +120,9 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     while (k < posts.size) {
         val bx = posts[k].roundToInt() - ix
         val by = posts[k + 1].roundToInt() - iy
-        when (hole.style) {
-            "desert" -> Bodies.cactus(c, bx, by)
+        when {
+            hole.style == "desert" -> Bodies.cactus(c, bx, by)
+            Bodies.ownTree(hole.style) -> Bodies.treeBase(c, hole.style, bx, by)
             else -> { Sprites.palmShadow(c, bx, by, Sprites.palmSway(time, k)); Sprites.palmTrunk(c, bx, by) }
         }
         k += 2
@@ -115,7 +131,17 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     // Buoys, coral, crabs, barrels and cracked planks.
     val crabK = if (crabMoveT < 0f || reduceMotion) 1f else min(1f, crabMoveT / CRAB_STEP_S)
     Bodies.draw(c, hole, holeState, ix, iy, if (reduceMotion) 0f else steppedTime, crabFromX, crabFromY, crabK,
-        mode == Mode.PLAY && !physics.moving && sinkT < 0f, bumpX, bumpY, bumpT, lw + 1, lh + 1)
+        mode == Mode.PLAY && !physics.moving && sinkT < 0f, bumpX, bumpY, bumpT, lw + 1, lh + 1,
+        if (pulseT >= 0f) pulseT / GameView.PULSE_S else 1f,
+        if (gateT[0] >= 0f) gateT[0] / GameView.GATE_S else 1f, if (gateT[1] >= 0f) gateT[1] / GameView.GATE_S else 1f)
+    // A kicker's board springs up, a boost pad flashes.
+    if (padT >= 0f) {
+        val px0 = floor(padX / TILE).toInt() * TILE - ix
+        val py0 = floor(padY / TILE).toInt() * TILE - iy
+        val a = (220 * (1f - padT / GameView.PAD_S)).toInt().coerceIn(0, 255)
+        if (padBoost) rect(c, px0 + 1, py0 + 1, TILE - 2, TILE - 2, Palette.alpha(Palette.GOLD, a / 2))
+        else { rect(c, px0, py0 - 2, TILE, 2, Palette.alpha(Palette.GOLD, a)); rect(c, px0 + 1, py0, TILE - 2, 1, Palette.alpha(Palette.STONES[0], a)) }
+    }
 
     mark(GameView.PH_PIECES)
     ambient.draw(c, ix, iy, time, physics.x, physics.y, physics.moving, reduceMotion)
@@ -149,12 +175,16 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     while (k < posts.size) {
         val bx = posts[k].roundToInt() - ix
         val by = posts[k + 1].roundToInt() - iy
-        when (hole.style) {
-            "desert" -> {}
-            "autumn" -> Bodies.autumnCanopy(c, bx, by, Sprites.palmSway(time, k))
+        val own = Bodies.ownTree(hole.style)
+        when {
+            hole.style == "desert" -> {}
+            hole.style == "autumn" -> Bodies.autumnCanopy(c, bx, by, Sprites.palmSway(time, k))
+            own -> Bodies.treeTop(c, hole.style, bx, by, Sprites.palmSway(time, k), if (reduceMotion) 0 else (steppedTime * 4f).toInt() + k)
             else -> Sprites.palmCanopy(c, bx, by, Sprites.palmSway(time, k))
         }
-        if (sinkT < 0f && Sprites.underCanopy(physics.x, physics.y, posts[k], posts[k + 1])) under = true
+        val hides = if (own) Bodies.treeHides(hole.style, physics.x, physics.y, posts[k], posts[k + 1])
+            else hole.style != "desert" && Sprites.underCanopy(physics.x, physics.y, posts[k], posts[k + 1])
+        if (sinkT < 0f && hides) under = true
         k += 2
     }
     if (under) Sprites.ball(c, physics.x.roundToInt() - ix, physics.y.roundToInt() - iy, 0, ghost = true, lift = physics.z.roundToInt())
@@ -234,7 +264,7 @@ internal fun GameView.drawBall(c: Canvas, ix: Int, iy: Int) {
     val x = bx.roundToInt() - ix + wobble
     val y = by.roundToInt() - iy
     val dir = if (physics.vx + physics.vy >= 0f) 1 else -1
-    Sprites.ball(c, x, y, ((rollDist / 2.5f).toInt() * dir) and 3, lift = physics.z.roundToInt())
+    Sprites.ball(c, x, y, ((rollDist / 2.5f).toInt() * dir) and 3, lift = physics.z.roundToInt(), squash = squashT >= 0f)
     // An idle ball breathes a faint ring so it's easy to find.
     if (mode == Mode.PLAY && !physics.moving && !aiming && sheet == Sheet.NONE && !flyover) {
         val ph = (steppedTime * 0.8f) % 1f

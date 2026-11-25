@@ -16,7 +16,8 @@ def load(prefix):
 
 B, R = {}, {}
 for p in ('cand_both.txt',):
-    b, r = load(p); B.update(b); R.update(r)
+    if os.path.exists(p) and os.path.exists(p + '.results'):
+        b, r = load(p); B.update(b); R.update(r)
 
 GAPS = {'ventgap', 'kickgap', 'portalgap'}
 OBJ = dict(oasis='Oasis', mushroom='Mushroom', carnival='Carnival', sky='Skyreach', clock='Clockwork',
@@ -119,7 +120,124 @@ object {OBJ[theme]} {{
 }}
 '''
 
+
+# ---------------------------------------------------------------- second rounds (--hard)
+
+HARD_MOOD = dict(oasis='DESERT_NIGHT', mushroom='SPORELIGHT', carnival='NEON', sky='SUNSET_SKY', clock='RUST',
+                 mangrove='MIST', crystal='DEEP_CAVE', autumn='FIRST_FROST', zen='MOON_GARDEN', starfall='AURORA')
+NAMES_II = dict(
+    oasis=['SANDSTORM', 'DRY WELL', 'THE SINKHOLE', 'NOMAD ROAD', 'SALT CARAVAN', 'BONE DUNES', 'MOON MIRAGE', 'VIPER PASS', 'THE LAST WELL'],
+    mushroom=['SPORE STORM', 'INKCAP', 'THE ROT', 'BRACKET STEPS', 'DEATHCAP', 'FUNGAL DEEP', 'GLOW ROT', 'TRUFFLE RUN', 'THE OLD RING'],
+    carnival=['NIGHT SHIFT', 'NEON ALLEY', 'THE GHOST TRAIN', 'DODGEMS', 'HOUSE OF MIRRORS', 'TOP PRIZE', 'THE BIG WHEEL', 'LOOP THE LOOP', 'CLOSING TIME'],
+    sky=['RED SKY', 'DUSK DIVE', 'THE CORNICE', 'WIND SHEAR', 'SKY BRIDGE', 'TALON ROCK', 'LAST LIGHT', 'THE SPIRE', 'EVENING STAR'],
+    clock=['SEIZED', 'RUSTED GEARS', 'THE ESCAPEMENT', 'BROKEN SPRING', 'COUNTERWEIGHT', 'THE CHIME', 'OVERWOUND', 'DEAD BEAT', 'THE LAST HOUR'],
+    mangrove=['FOG BANK', 'THE SNARL', 'SUNKEN ROOTS', 'GATOR HOLE', 'MIST POOL', 'DEAD WATER', 'THE TANGLE', 'EEL CREEK', 'THE HEART'],
+    crystal=['THE DEEP', 'BLACK GEODE', 'THE CHASM', 'LODE LINE', 'SHARD FIELD', 'UNDERTOW', 'OBSIDIAN EYE', 'THE ABYSS', 'CORE'],
+    autumn=['FROSTBITE', 'BARE BRANCH', 'THE HOLLOW OAK', 'FROZEN BROOK', 'SLEET', 'COLD HARVEST', 'WOLF TRACK', 'THE THAW', 'WINTER GATE'],
+    zen=['MOONSTONE', 'NIGHT KOI', 'THE STILL POOL', 'SHADOW BRIDGE', 'BELL TOWER', 'SILENT STEPS', 'PAPER LANTERN', 'MOON GATE', 'THE VOID'],
+    starfall=['AURORA', 'SOLAR WIND', 'THE COMET', 'DARK MATTER', 'SUPERNOVA', 'MILKY WAY', 'EVENT HORIZON', 'STAR NURSERY', 'THE GREAT BEYOND'],
+)
+TOL = (0.40, 0.75)
+
+def ok_hard(id_):
+    r = R.get(id_)
+    if not r or r['coast'] != 'true' or float(r['stray']) > 3 or 'tol' not in r: return False
+    t = float(r['tol'])
+    if not (TOL[0] <= t <= TOL[1]): return False
+    kinds = set(B[id_][0].get('kinds', '').split(','))
+    tw = R.get(id_ + '~plain')
+    b = int(r['best'])
+    if kinds & GAPS and tw and tw['best'] != '0' and int(tw['best']) <= b: return False
+    return 2 <= b <= 5
+
+def pick_hard(theme):
+    rnd = random.Random(theme + '2')
+    sig = THEMES[theme]['sig']
+    ids = [i for i in B if i.startswith(theme + '-H') and '~' not in i and ok_hard(i)]
+    best = lambda i: int(R[i]['best'])
+    kinds = lambda i: [k for k in B[i][0]['kinds'].split(',') if k]
+    # Hole 1: a par 4 with the signature and one more challenge; the closer a par 5.
+    pars = [3, 4, 4, 4, 5, 5, 5]
+    rnd.shuffle(pars)
+    pars = [4] + pars + [5]
+    chosen, seen = [], set()
+    for n, par in enumerate(pars):
+        def fits(i, b):
+            if i in chosen or best(i) != b: return False
+            return n != 0 or (sig in kinds(i) and len(set(kinds(i))) >= 2)
+        pool = [i for i in ids if fits(i, par - 1)] or [i for i in ids if fits(i, par - 2)]
+        def score(i):
+            k = set(kinds(i))
+            return (2 * (sig in k) + len(k - seen) + 0.5 * len(k) - float(R[i]['tol']), rnd.random())
+        pick = max(pool, key=score)
+        chosen.append(pick); seen |= set(kinds(pick))
+    return chosen
+
+def kotlin_hard(theme, chosen):
+    T = THEMES[theme]
+    obj = OBJ[theme] + 'II'
+    out, names = [], []
+    for n, id_ in enumerate(chosen):
+        props, rows = B[id_]
+        par = int(R[id_]['best']) + 1
+        ks = [k for k in props['kinds'].split(',') if k]
+        doc = 'Past ' + ' then '.join(DOCS[k] for k in ks) + '.' if ks else 'Tee to green.'
+        kn = f'{OBJ[theme].upper()}_II_{n + 1}'
+        names.append(kn)
+        extra = ''
+        if 'wind' in props: extra += f"        windDeg = {float(props['wind'])}f,\n"
+        if 'mills' in props:
+            ms = []
+            for m in props['mills'].split(';'):
+                v = m.split(',')
+                ms.append(f'Windmill({int(float(v[0]))}, {int(float(v[1]))}, length = {float(v[2])}f, omega = {float(v[3])}f, phase = {float(v[4])}f)')
+            extra += f"        windmills = listOf({', '.join(ms)}),\n"
+        body = '\n'.join(f'            "{r}",' for r in rows)
+        out.append(f"""    /** {doc[0].upper() + doc[1:]} ({id_}, tolerance {R[id_]['tol']}) */
+    val {kn} = Hole(
+        name = "{NAMES_II[theme][n]}",
+        par = {par},
+{extra}        rows = listOf(
+{body}
+        ),
+    )
+""")
+    return f"""package com.theprobyte.golfalone.game
+
+import com.theprobyte.golfalone.render.Mood
+
+/**
+ * {T['name'].title()} II: the harder second round, opened by finishing a round of {T['name'].title()}.
+ * Laid out by the generator's hard setting (tools/holegen) and kept only where the bot proved
+ * it: par is its best plus one, and every hole is less forgiving than the course average
+ * (tolerance {TOL[0]}-{TOL[1]}: the share of near-miss shots that still make par).
+ */
+object {obj} {{
+
+{chr(10).join(out)}
+    val COURSE = Course("{theme}2", "{T['name']} II", mood = Mood.{HARD_MOOD[theme]}, style = "{T['style']}",
+        base = {OBJ[theme]}.COURSE, holes = listOf({', '.join(names)}))
+}}
+"""
+
+def emit_hard(themes, force):
+    for theme in themes:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../app/src/main/java/com/theprobyte/golfalone/game', f'{OBJ[theme]}II.kt')
+        if os.path.exists(path) and not force:
+            print(theme, 'II exists; pass --force to replace it'); continue
+        ch = pick_hard(theme)
+        print(theme + '2', [(i, int(R[i]['best']) + 1, R[i]['tol']) for i in ch], 'par', sum(int(R[i]['best']) + 1 for i in ch))
+        open(path, 'w').write(kotlin_hard(theme, ch))
+
 if __name__ == '__main__':
+    args = sys.argv[1:]
+    if '--hard' in args:
+        force = '--force' in args
+        cands = [a.split('=', 1)[1] for a in args if a.startswith('--cands=')]
+        for p in (cands[0].split(',') if cands else []):
+            b, r = load(p); B.update(b); R.update(r)
+        emit_hard([a for a in args if not a.startswith('--')] or list(THEMES), force)
+        sys.exit(0)
     for theme in (sys.argv[1:] or THEMES):
         ch = pick(theme)
         print(theme, [(i, int(R[i]['best']) + 1) for i in ch], 'par', sum(int(R[i]['best']) + 1 for i in ch))

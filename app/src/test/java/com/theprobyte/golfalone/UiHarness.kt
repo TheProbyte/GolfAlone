@@ -162,7 +162,7 @@ abstract class UiHarness {
     protected fun openEveryCourse() {
         val prefs = org.robolectric.RuntimeEnvironment.getApplication().getSharedPreferences("golf", android.content.Context.MODE_PRIVATE)
         val e = prefs.edit()
-        for (c in com.theprobyte.golfalone.game.Holes.COURSES) {
+        for (c in com.theprobyte.golfalone.game.Holes.allCourses) {
             e.putInt("course_${c.id}", 30)
             for (i in c.holes.indices) e.putInt("best_${c.id}_$i", 9)
         }
@@ -176,7 +176,7 @@ abstract class UiHarness {
     /** Visits each course in [plays] on the title and plays the listed holes from hole select. */
     protected fun tour(plays: Map<String, List<Int>>) {
         for ((id, holes) in plays) {
-            while (game.courseForTest.id != id) { press(GameView.B_NEXT_COURSE); runUntil(3000) { !game.fading } }
+            goTo(id)
             run(400)
             frame("c-$id-0-title")
             for (h in holes) {
@@ -198,5 +198,20 @@ abstract class UiHarness {
                 press(GameView.B_BACK)
             }
         }
+    }
+
+    /** Shows course [id] on the title, with the arrows (and the round chip for a second round). */
+    protected fun goTo(id: String) {
+        val target = com.theprobyte.golfalone.game.Holes.course(id)!!
+        val first = target.base ?: target
+        if (game.courseForTest.base != null) press(GameView.B_VARIANT)
+        val list = com.theprobyte.golfalone.game.Holes.COURSES
+        var guard = 0
+        while (game.courseForTest.id != first.id && guard++ < list.size) {
+            press(if (list.indexOf(first) > list.indexOf(game.courseForTest)) GameView.B_NEXT_COURSE else GameView.B_PREV_COURSE)
+            runUntil(3000) { !game.fading }
+        }
+        assertEquals(first.id, game.courseForTest.id)
+        if (target.base != null) { press(GameView.B_VARIANT); assertEquals(id, game.courseForTest.id) }
     }
 }

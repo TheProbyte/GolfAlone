@@ -249,6 +249,18 @@ class Ambient {
             }
             return
         }
+        if (theme == "mushroom") {
+            // Glowing spores rising slowly, swaying.
+            for (k in 0 until 14) {
+                val h1 = Terrain.hash(k, 11, 19)
+                val h2 = Terrain.hash(k, 12, 19)
+                val x = ((h1 * (lw + 20) + sin(t * 0.8f + k * 1.7f) * 5f).toInt() % (lw + 20)) - 10
+                val y = (lh + 10) - ((h2 * (lh + 20) + t * 6f * (0.5f + h1)) % (lh + 20)).toInt()
+                val a = (140 + 90 * sin(t * 2f + k)).toInt().coerceIn(0, 255)
+                px(c, x, y, Palette.alpha(if (k % 3 == 0) 0xFFB8F0D0.toInt() else 0xFFD878E0.toInt(), a))
+            }
+            return
+        }
         if (theme == "starfall") {
             // Now and then a shooting star.
             val period = 5f

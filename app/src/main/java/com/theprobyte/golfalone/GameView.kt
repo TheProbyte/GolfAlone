@@ -368,7 +368,7 @@ class GameView(
         terrain = terrains[i].get()
         // This hole's water is built off the main thread; the map shows without it for a moment.
         if (!terrain.waterReady) { val t = terrain; waterer.submit { t.prepareWater() } }
-        ambient.reset(terrain, course.id)
+        ambient.reset(terrain, course.theme)
         crabFromX = FloatArray(hole.crabs.size) { holeState.crabX(it) }
         crabFromY = FloatArray(hole.crabs.size) { holeState.crabY(it) }
         crabMoveT = -1f
@@ -403,10 +403,17 @@ class GameView(
         camSnap = true
     }
 
-    /** A course is open once the round before it has been finished. */
+    /** A course is open once the round before it has been finished; a second round, once its first is. */
     internal fun courseOpen(c: Course): Boolean {
+        lockedBy(c)?.let { return progress.courseBestOf(it.id) > 0 }
+        return true
+    }
+
+    /** The course whose round opens [c]: its first version, or the course before it; null for the first. */
+    internal fun lockedBy(c: Course): Course? {
+        c.base?.let { return it }
         val i = Holes.COURSES.indexOf(c)
-        return i <= 0 || progress.courseBestOf(Holes.COURSES[i - 1].id) > 0
+        return if (i <= 0) null else Holes.COURSES[i - 1]
     }
 
     /**
@@ -440,14 +447,27 @@ class GameView(
     /** On the title: show the next or previous course (locked ones too, as a preview). */
     internal fun moveCourse(d: Int) {
         val list = Holes.COURSES
-        val k = (list.indexOf(course) + d).coerceIn(0, list.size - 1)
-        if (list[k] === course || fadeT >= 0f) return
+        val at = list.indexOf(course.base ?: course)
+        val k = (at + d).coerceIn(0, list.size - 1)
+        if (k == at || fadeT >= 0f) return
         sfx.tap()
         haptics.tap(this)
         // Instant: the card changes now and the island fades in as soon as its map is built.
         switchCourse(list[k])
         courseSlideT = 0f
         courseSlideDir = d
+        titlePanAt = modeT + TITLE_PAN_S
+    }
+
+    /** On the title: between a course and its harder second round (shown locked until it opens). */
+    internal fun switchVariant() {
+        val other = course.base ?: Holes.secondOf(course) ?: return
+        if (fadeT >= 0f) return
+        sfx.tap()
+        haptics.tap(this)
+        switchCourse(other)
+        courseSlideT = 0f
+        courseSlideDir = if (other.base != null) 1 else -1
         titlePanAt = modeT + TITLE_PAN_S
     }
 
@@ -650,6 +670,8 @@ class GameView(
         val wasHigh = holeState.high
         for (i in crabFromX.indices) { crabFromX[i] = holeState.crabX(i); crabFromY[i] = holeState.crabY(i) }
         if (physics.endShot()) say("LIFTED CLEAR", physics.x, physics.y - 8f, Palette.INK)
+        // Pulse walls swap now: they rise and sink rather than blink.
+        if (!reduceMotion && (hole.tilesOf(Tile.PULSE_A).isNotEmpty() || hole.tilesOf(Tile.PULSE_B).isNotEmpty())) pulseT = 0f
         if (crabFromX.indices.any { crabFromX[it] != holeState.crabX(it) || crabFromY[it] != holeState.crabY(it) }) {
             crabMoveT = 0f
             sfx.scuttle(0f)
@@ -812,10 +834,11 @@ class GameView(
     internal fun onButton(id: Int) {
         sfx.tap()
         when (id) {
-            B_PLAY -> if (!courseOpen(course)) sayUi("FINISH ${Holes.COURSES[Holes.COURSES.indexOf(course) - 1].name} FIRST")
+            B_PLAY -> if (!courseOpen(course)) sayUi("FINISH ${lockedBy(course)?.name} FIRST")
                 else if (hasSavedRound) continueRound() else startCourse()
             B_PREV_COURSE -> moveCourse(-1)
             B_NEXT_COURSE -> moveCourse(1)
+            B_VARIANT -> switchVariant()
             B_NEW -> startCourse()
             B_HOLES -> if (courseOpen(course)) toSelect() else sayUi("LOCKED FOR NOW")
             B_BACK -> toTitle()
@@ -856,11 +879,17 @@ class GameView(
         val next = holeIndex + 1
         if (courseRun && next >= n) {
             fadeTo {
-                val ci = Holes.COURSES.indexOf(course)
-                val nextCourse = Holes.COURSES.getOrNull(ci + 1)
+                // A first round opens the next course and its own second round; a second round opens nothing.
+                val nextCourse = if (course.base != null) null else Holes.COURSES.getOrNull(Holes.COURSES.indexOf(course) + 1)
+                val second = Holes.secondOf(course)
                 val wasOpen = nextCourse == null || courseOpen(nextCourse)
+                val secondWasOpen = second == null || courseOpen(second)
                 courseNewBest = progress.recordCourse(scores.sum())
-                opened = if (!wasOpen && nextCourse != null && courseOpen(nextCourse)) nextCourse.name else null
+                val news = listOfNotNull(
+                    nextCourse?.takeIf { !wasOpen && courseOpen(it) }?.name,
+                    second?.takeIf { !secondWasOpen && courseOpen(it) }?.let { "ROUND II" },
+                )
+                opened = if (news.isEmpty()) null else news.joinToString(" + ")
                 progress.clearRun()
                 setMode(Mode.FINAL)
             }
@@ -924,6 +953,7 @@ class GameView(
 
     override fun onWall(x: Float, y: Float, impact: Float, wood: Boolean) {
         sfx.wall(impact, pan(x), wood)
+        if (impact > 60f && !reduceMotion) squashT = 0f
         if (time - lastWallHaptic > 0.04f) { haptics.wall(this, impact); lastWallHaptic = time }
         if (impact > 170f && !reduceMotion) shakeT = 0f
         repeat((impact / 70f).toInt().coerceIn(1, 4)) {
@@ -986,6 +1016,7 @@ class GameView(
                 spawn(x, y, cos(a) * s, sin(a) * s, 0.5f + rnd.nextFloat() * 0.3f, if (fell) Palette.PAPER[3] else Palette.SANDS[2])
             }
             say(if (fell) "+1 FELL" else "+1 SWALLOWED", x, y - 8f, Palette.INK)
+            if (swallowed && !reduceMotion) spriteFx.sink(x, y)
             popT = 0f
             sfx.pop(pan(dropX))
             ring(dropX, dropY, 0.5f, 6f, Palette.INK)
@@ -1030,6 +1061,7 @@ class GameView(
         sfx.bell(pan(x))
         haptics.wall(this, 200f)
         bumpT = 0f; bumpX = x; bumpY = y
+        if (!reduceMotion) squashT = 0f
         ring(x, y, 0.3f, 6f, Palette.GOLD)
     }
 
@@ -1060,6 +1092,9 @@ class GameView(
         sfx.gate(opened, pan(x))
         haptics.tap(this)
         if (opened) { say("A GATE OPENS", x, y - 8f, Palette.GOLD); if (!reduceMotion) shakeT = 0f }
+        // The gates of this plate's group sink into the ground.
+        val g = hole.plateOf.getOrNull(floor(y / TILE).toInt() * hole.w + floor(x / TILE).toInt()) ?: -1
+        if (opened && g in 0..1 && !reduceMotion) gateT[g] = 0f
     }
 
     override fun onCrack(x: Float, y: Float) {
@@ -1070,11 +1105,13 @@ class GameView(
     override fun onKick(x: Float, y: Float) {
         sfx.boing(pan(x))
         haptics.tap(this)
+        if (!reduceMotion) { padT = 0f; padX = x; padY = y; padBoost = false }
         ring(x, y, 0.3f, 6f, Palette.GOLD)
     }
 
     override fun onBoost(x: Float, y: Float) {
         sfx.zip(pan(x))
+        if (!reduceMotion) { padT = 0f; padX = x; padY = y; padBoost = true }
         repeat(5) { spawn(x, y, rnd.nextFloat() * 20f - 10f, rnd.nextFloat() * 20f - 10f, 0.3f, Palette.GOLD) }
     }
 
@@ -1102,6 +1139,7 @@ class GameView(
         sfx.lipOut(pan(x))
         haptics.lipOut(this)
         say("LIP OUT!", hole.cupX, hole.cupY - 20f, Palette.GOLD)
+        ring(hole.cupX, hole.cupY, 0.35f, 5f, Palette.GOLD) // round the rim
     }
 
     override fun onStop(x: Float, y: Float) {
@@ -1256,6 +1294,10 @@ class GameView(
         if (punchT >= 0f) { punchT += dt; if (punchT > PUNCH_S) punchT = -1f }
         if (tideT >= 0f) { tideT += dt; if (tideT > TIDE_S) tideT = -1f }
         if (bumpT >= 0f) { bumpT += dt; if (bumpT > 0.3f) bumpT = -1f }
+        if (squashT >= 0f) { squashT += dt; if (squashT > SQUASH_S) squashT = -1f }
+        if (pulseT >= 0f) { pulseT += dt; if (pulseT > PULSE_S) pulseT = -1f }
+        for (g in 0..1) if (gateT[g] >= 0f) { gateT[g] += dt; if (gateT[g] > GATE_S) gateT[g] = -1f }
+        if (padT >= 0f) { padT += dt; if (padT > PAD_S) padT = -1f }
         if (crabMoveT >= 0f) { crabMoveT += dt; if (crabMoveT > CRAB_STEP_S) crabMoveT = -1f }
         spriteFx.update(dt)
         if (popT >= 0f) { popT += dt; if (popT > 0.5f) popT = -1f }
@@ -1283,8 +1325,8 @@ class GameView(
         }
         surfNext -= dt
         if (surfNext <= 0f) {
-            if (course.id == "cove" || rnd.nextBoolean()) sfx.surf(rnd.nextFloat() * 1.6f - 0.8f)
-            else sfx.ambience(course.id, rnd.nextFloat() * 1.6f - 0.8f, rnd.nextFloat())
+            if (course.theme == "cove" || rnd.nextBoolean()) sfx.surf(rnd.nextFloat() * 1.6f - 0.8f)
+            else sfx.ambience(course.theme, rnd.nextFloat() * 1.6f - 0.8f, rnd.nextFloat())
             surfNext = 5f + rnd.nextFloat() * 4f
         }
 
@@ -1387,12 +1429,22 @@ class GameView(
     }
 
     internal var lastWasActive = true
+
+    // Feel animations: drawn only, never waited on by the physics; none under reduce motion.
+    internal var squashT = -1f
+    internal var pulseT = -1f
+    internal val gateT = floatArrayOf(-1f, -1f)
+    internal var padT = -1f
+    internal var padX = 0f
+    internal var padY = 0f
+    internal var padBoost = false
     internal var uiTitleTick = -1
 
     /** What's moving right now, for [RedrawPolicy]. */
     internal fun redrawState(): RedrawPolicy.State {
         var effects = msg != null || popT >= 0f || shakeT >= 0f || teeterT >= 0f || peeking || celebrateT >= 0f ||
-            punchT >= 0f || spriteFx.active || ambient.busy(time) || tideT >= 0f || bumpT >= 0f || crabMoveT >= 0f
+            punchT >= 0f || spriteFx.active || ambient.busy(time) || tideT >= 0f || bumpT >= 0f || crabMoveT >= 0f ||
+            squashT >= 0f || pulseT >= 0f || gateT[0] >= 0f || gateT[1] >= 0f || padT >= 0f
         if (!effects) for (i in 0 until pn) if (pLife[i] > 0f) { effects = true; break }
         if (!effects) for (i in 0 until rn) if (rT[i] >= 0f) { effects = true; break }
         return RedrawPolicy.State(
@@ -1717,6 +1769,12 @@ class GameView(
         const val B_TAB_CARDS = 30
         const val B_PREV_COURSE = 31
         const val B_NEXT_COURSE = 32
+        const val B_VARIANT = 33
+        /** How long a hit ball stays squashed, pulse walls take to swap, gates to sink, pads to flash (s). */
+        const val SQUASH_S = 0.07f
+        const val PULSE_S = 0.2f
+        const val GATE_S = 0.3f
+        const val PAD_S = 0.16f
         /** Each half of the glide between holes (s). */
         const val GLIDE_S = 0.4f
         /** The title's backdrop moves to the next hole this often (s). */
