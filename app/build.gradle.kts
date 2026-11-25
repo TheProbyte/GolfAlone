@@ -66,5 +66,9 @@ tasks.withType<Test>().configureEach {
     (project.findProperty("shots") as String?)?.let { systemProperty("golfalone.shots", it) }
     (project.findProperty("audio") as String?)?.let { systemProperty("golfalone.audio", it) }
     (project.findProperty("candidates") as String?)?.let { systemProperty("golfalone.candidates", it) }
+    (project.findProperty("pins") as String?)?.let { systemProperty("golfalone.pins", it) }
+    // Robolectric tests are independent classes: run them in parallel JVMs.
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+    maxHeapSize = "2g"
     testLogging { events("passed", "failed"); showStandardStreams = true }
 }

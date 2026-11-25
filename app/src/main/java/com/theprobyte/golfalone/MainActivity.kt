@@ -13,6 +13,7 @@ class MainActivity : Activity() {
     internal lateinit var game: GameView
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        createdAt = android.os.SystemClock.uptimeMillis()
         super.onCreate(savedInstanceState)
         progress = Progress(this)
         sfx = Sfx(this).apply { effectsVolume = progress.effectsVolume; surfVolume = progress.surfVolume }
@@ -87,5 +88,10 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (!game.onBack()) super.onBackPressed()
+    }
+
+    companion object {
+        /** When the activity was created, so the overlay's START includes building every course. */
+        @Volatile var createdAt = 0L
     }
 }

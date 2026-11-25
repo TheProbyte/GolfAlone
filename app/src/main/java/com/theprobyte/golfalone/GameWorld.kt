@@ -45,6 +45,7 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
         }
         sy += Terrain.SEA_H
     }
+    mark(GameView.PH_SEA)
     // A course just chosen on the title: open sea until its first map is ready.
     if (backdropPending) return
     val gx = -ix.toFloat()
@@ -69,6 +70,7 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
         }
     }
 
+    mark(GameView.PH_MAP)
     // Glints drifting downhill on slopes.
     for (i in slopeTiles) {
         val t = hole.tiles[i]
@@ -115,7 +117,9 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
     Bodies.draw(c, hole, holeState, ix, iy, if (reduceMotion) 0f else steppedTime, crabFromX, crabFromY, crabK,
         mode == Mode.PLAY && !physics.moving && sinkT < 0f, bumpX, bumpY, bumpT)
 
+    mark(GameView.PH_PIECES)
     ambient.draw(c, ix, iy, time, physics.x, physics.y, physics.moving, reduceMotion)
+    mark(GameView.PH_LIFE)
 
     // Trail, coloured by the shot's power.
     val trail = powerColour(shotPower)
@@ -181,12 +185,14 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
         Sprites.gull(c, gx, gy, flap, Palette.INK)
     }
 
+    mark(GameView.PH_FX)
     // Windmill blades turn on the shot's own clock (still between shots).
     Bodies.windmills(c, hole, ix, iy, if (physics.moving) physics.shotTime else 0f)
 
     // Lanterns and the lighthouse (with its beam) stand over everything.
     Bodies.scenery(c, hole, ix, iy, steppedTime, reduceMotion)
 
+    mark(GameView.PH_PIECES)
     // A storm's rain (screen space; none under reduce motion).
     if (!reduceMotion) ambient.rain(c, lw + 1, lh + 1, time)
 
@@ -206,6 +212,7 @@ internal fun GameView.drawWorld(ix: Int, iy: Int) {
         PixelFont.drawCentered(c, m, msgX.roundToInt() - ix, msgY.roundToInt() - iy - rise,
             Palette.alpha(msgCol, a), 1, Palette.alpha(Palette.INK_SHADOW, a), PixelFont.Face.BIG)
     }
+    mark(GameView.PH_FX)
 }
 
 internal fun GameView.drawBall(c: Canvas, ix: Int, iy: Int) {

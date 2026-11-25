@@ -24,6 +24,7 @@ import kotlin.math.sqrt
  */
 class Terrain(private val hole: Hole, private val high: Boolean = false) {
 
+    private val bornNs = System.nanoTime()
     val w = hole.pxW
     val h = hole.pxH
     val ground: Bitmap
@@ -57,14 +58,25 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
 
     @Synchronized private fun buildWater(): Array<Bitmap> {
         waterFrames?.let { return it }
+        val t0 = System.nanoTime()
         val frames = Array(FRAMES) { f ->
             val o = IntArray(w * h)
             for (y in 0 until h) for (x in 0 until w) o[y * w + x] = waterPixel(x, y, f)
             Pix.bitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(o, 0, w, 0, 0, w, h) }
         }
+        waterMs = (System.nanoTime() - t0) / 1e6f
+        waterThread = Thread.currentThread().name
         waterFrames = frames
         return frames
     }
+
+    /** How long this map took to build, with its high-tide twin (ms), for the frame overlay. */
+    val bakeMs: Float
+    /** How long the water frames last took to build (ms), and on which thread. */
+    @Volatile var waterMs = 0f
+        private set
+    @Volatile var waterThread = ""
+        private set
 
     /** Frees the water frames (about 2.5 MB on the longest hole); they rebuild when next needed. */
     fun releaseWater() { waterFrames = null; flooded?.releaseWater() }
@@ -115,6 +127,7 @@ class Terrain(private val hole: Hole, private val high: Boolean = false) {
         castShadows(px)
         findSpots()
         ground = Pix.bitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(px, 0, w, 0, 0, w, h) }
+        bakeMs = (System.nanoTime() - bornNs) / 1e6f
     }
 
     private fun tileAt(x: Int, y: Int): Tile = hole.tile(Math.floorDiv(x, TILE), Math.floorDiv(y, TILE))

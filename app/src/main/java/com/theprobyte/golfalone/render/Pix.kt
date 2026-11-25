@@ -18,24 +18,31 @@ object Pix {
     fun bitmap(w: Int, h: Int, config: Bitmap.Config = Bitmap.Config.ARGB_8888): Bitmap =
         Bitmap.createBitmap(w, h, config).apply { density = Bitmap.DENSITY_NONE }
 
+    /** Primitives drawn since the frame overlay last reset it: a cheap, exact measure of draw work. */
+    @JvmField var calls = 0
+
     fun px(c: Canvas, x: Int, y: Int, col: Int) {
+        calls++
         p.color = col
         c.drawRect(x.toFloat(), y.toFloat(), x + 1f, y + 1f, p)
     }
 
     fun rect(c: Canvas, x: Int, y: Int, w: Int, h: Int, col: Int) {
         if (w <= 0 || h <= 0) return
+        calls++
         p.color = col
         c.drawRect(x.toFloat(), y.toFloat(), (x + w).toFloat(), (y + h).toFloat(), p)
     }
 
     fun oval(c: Canvas, cx: Float, cy: Float, rx: Float, ry: Float, col: Int) {
+        calls++
         p.color = col
         c.drawOval(cx - rx, cy - ry, cx + rx, cy + ry, p)
     }
 
     /** A 1 px ring. */
     fun ring(c: Canvas, cx: Float, cy: Float, r: Float, col: Int) {
+        calls++
         line.color = col
         c.drawCircle(cx, cy, r, line)
     }

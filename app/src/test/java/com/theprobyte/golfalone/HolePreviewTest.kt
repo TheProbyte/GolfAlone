@@ -19,11 +19,13 @@ import java.io.FileOutputStream
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class HolePreviewTest {
     @Test fun renderAllHoles() {
+        val baked = HashMap<com.theprobyte.golfalone.game.Hole, Terrain>()
         for (hole in Holes.everyHole) {
             // What's drawn as land is exactly what physics treats as land.
-            val (land, _, _) = Terrain(hole).masks()
+            val t = Terrain(hole).also { baked[hole] = it }
+            val (land, _, _) = t.masks()
             org.junit.Assert.assertTrue("${hole.name}: drawn coast = physics coast", land.contentEquals(hole.coast.land))
-            val m = Terrain(hole).mismatch()
+            val m = t.mismatch()
             println("${hole.name}: drawn vs physics, deepest stray px: land ${m[0]}, water ${m[1]}, sand ${m[2]}, green ${m[3]}")
             // Keep every drawn edge within 3 px of the tiles the physics uses.
             org.junit.Assert.assertTrue("${hole.name} strays ${m.toList()}", m.all { it <= 3f })
@@ -33,7 +35,7 @@ class HolePreviewTest {
         for (course in Holes.COURSES) {
             com.theprobyte.golfalone.render.Palette.setMood(course.mood)
             course.holes.forEachIndexed { i, hole ->
-                val base = Terrain(hole)
+                val base = baked.getValue(hole)
                 for (t in listOfNotNull(base, base.flooded)) {
                     val b = Bitmap.createBitmap(t.w * scale, t.h * scale, Bitmap.Config.ARGB_8888)
                     val c = Canvas(b)

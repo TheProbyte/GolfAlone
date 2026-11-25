@@ -108,7 +108,7 @@ class GameView(
     /** False until the first map is built (off the main thread); a splash shows meanwhile. */
     internal var ready = false
     /** Time from the view's creation to the first real frame (ms), for the overlay. */
-    internal val createdAt = SystemClock.uptimeMillis()
+    internal val createdAt = MainActivity.createdAt.takeIf { it > 0L } ?: SystemClock.uptimeMillis()
     internal var startupMs = -1L
         private set
     internal var slopeTiles = IntArray(0)
@@ -1327,7 +1327,10 @@ class GameView(
             frameMs[frameNext] = dtMs.toFloat(); frameNext = (frameNext + 1) % frameMs.size
             if (dtMs > worstFrameMs) worstFrameMs = dtMs.toFloat()
         }
+        Pix.calls = 0
+        markAt = t0
         update(dt)
+        mark(PH_STEP)
 
         val vx = camX + glideOffsetX
         val vy = camY + glideOffset
@@ -1335,6 +1338,7 @@ class GameView(
         val iy = floor(vy).toInt()
         drawWorld(ix, iy)
         if (uiNeedsRedraw()) drawUi()
+        mark(PH_UI)
 
         val shake = if (shakeT >= 0f) (if ((shakeT * 60f).toInt() % 2 == 0) scale else -scale) else 0
         val punch = if (punchT >= 0f) ((1f - punchT / PUNCH_S) * 3f).roundToInt() * scale else 0
@@ -1347,6 +1351,9 @@ class GameView(
         src.set(0, 0, ub.width, ub.height)
         dst.set(offX, offY, offX + ub.width * scale, offY + ub.height * scale)
         canvas.drawBitmap(ub, src, dst, blit)
+        mark(PH_BLIT)
+        for (i in 0 until PHASES) { phaseMs[i] += (phaseAcc[i] / 1e6f - phaseMs[i]) * 0.1f; phaseAcc[i] = 0L }
+        drawCalls += (Pix.calls - drawCalls) * 0.1f
         val drawn = (System.nanoTime() - t0) / 1e6f
         drawMs[drawNext] = drawn
         drawNext = (drawNext + 1) % drawMs.size
@@ -1552,6 +1559,24 @@ class GameView(
 
     internal val sortTmp = FloatArray(120)
 
+    // Where a frame's time goes (the overlay's second block): ms per phase, smoothed.
+    internal val phaseMs = FloatArray(PHASES)
+    internal val phaseAcc = LongArray(PHASES)
+    internal var markAt = 0L
+    /** Primitives drawn per frame (Pix calls), smoothed. */
+    internal var drawCalls = 0f
+    internal var overlay4 = ""
+    internal var overlay5 = ""
+    internal var overlay6 = ""
+    internal var overlay7 = ""
+
+    /** Adds the time since the last mark to [phase]. */
+    internal fun mark(phase: Int) {
+        val now = System.nanoTime()
+        phaseAcc[phase] += now - markAt
+        markAt = now
+    }
+
     // ---------------------------------------------------------------- tests
 
     internal val ballX get() = physics.x
@@ -1600,6 +1625,18 @@ class GameView(
     }
 
     companion object {
+        // Frame phases for the overlay.
+        const val PH_STEP = 0
+        const val PH_SEA = 1
+        const val PH_MAP = 2
+        const val PH_PIECES = 3
+        const val PH_LIFE = 4
+        const val PH_FX = 5
+        const val PH_UI = 6
+        const val PH_BLIT = 7
+        const val PHASES = 8
+        val PHASE_NAMES = arrayOf("STEP", "SEA", "MAP", "PCS", "LIFE", "FX", "UI", "BLIT")
+
         const val LOGICAL_W = 180
         const val HUD_H = 14
         const val GULL_SPEED = 26f

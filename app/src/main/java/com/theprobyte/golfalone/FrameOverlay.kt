@@ -29,10 +29,19 @@ internal fun GameView.drawFrameTimes(c: Canvas) {
         overlay2 = if (d == null) "" else "DRAW ${fmt(d.first)} P95 ${fmt(d.second)} WORST ${fmt(worstDrawMs)}"
         overlay3 = (if (metricGpu >= 0f) "GPU ${fmt(metricGpu)} " else "") + "SYNC ${fmt(metricSync)} TOTAL ${fmt(metricTotal)}" +
             (if (startupMs >= 0) " START ${startupMs}MS" else "")
+        // Where the time goes, per phase of a frame (smoothed ms), and this hole's build costs.
+        fun ph(i: Int) = "${GameView.PHASE_NAMES[i]} ${fmt(phaseMs[i])}"
+        overlay4 = "${ph(GameView.PH_STEP)} ${ph(GameView.PH_SEA)} ${ph(GameView.PH_MAP)} ${ph(GameView.PH_PIECES)}"
+        overlay5 = "${ph(GameView.PH_LIFE)} ${ph(GameView.PH_FX)} ${ph(GameView.PH_UI)} ${ph(GameView.PH_BLIT)}"
+        val t = if (ready) terrain else null
+        overlay6 = "PRIMS ${drawCalls.roundToInt()}" + (if (t != null) " BAKE ${t.bakeMs.roundToInt()}MS WATER ${t.waterMs.roundToInt()}MS" else "")
+        val rt = Runtime.getRuntime()
+        val mb = 1024 * 1024
+        overlay7 = "HEAP ${(rt.totalMemory() - rt.freeMemory()) / mb}/${rt.maxMemory() / mb}MB ${course.id.uppercase()}-${holeIndex + 1}"
     }
-    val w = max(PixelFont.width(overlay1), max(PixelFont.width(overlay2), PixelFont.width(overlay3))) + 6
-    rect(c, 0, insetTop + 14, w, 23, Palette.alpha(Palette.INK_SHADOW, 200))
-    PixelFont.draw(c, overlay1, 3, insetTop + 16, Palette.GOLD)
-    PixelFont.draw(c, overlay2, 3, insetTop + 23, Palette.GOLD)
-    PixelFont.draw(c, overlay3, 3, insetTop + 30, Palette.GOLD)
+    val lines = arrayOf(overlay1, overlay2, overlay3, overlay4, overlay5, overlay6, overlay7)
+    var w = 0
+    for (l in lines) w = max(w, PixelFont.width(l))
+    rect(c, 0, insetTop + 14, w + 6, lines.size * 7 + 2, Palette.alpha(Palette.INK_SHADOW, 200))
+    for ((i, l) in lines.withIndex()) PixelFont.draw(c, l, 3, insetTop + 16 + i * 7, if (i < 3) Palette.GOLD else Palette.PAPER[3])
 }

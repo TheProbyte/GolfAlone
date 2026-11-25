@@ -1,6 +1,6 @@
 # Golf Alone: the next passes (levels, visuals, animations, performance)
 
-> **Status:** a plan; nothing here is built.
+> **Status:** being built, pass by pass. Done: pass 0.
 >
 > **Recommendation in one line:** give every course a harder **second round**, with its own course id,
 > instead of adding holes to the shipped courses. Before that, spend two short passes on
@@ -198,7 +198,7 @@ measurable and cheaper, and pass 2 finds out how many usable hard holes the gene
 
 | # | Pass | Scope | Risks | Checked by |
 |---|---|---|---|---|
-| 0 | **Measurement and CI time** | M1-M4, P7, P8. | The single search changes a bot best. | The saved bests file is unchanged; `GoldenShotsTest` passes. The user screenshots the new overlay page on Palm Grove, Grand Carousel and a Skyreach hole, as the baseline. |
+| 0 ✅ | **Measurement and CI time** | M1-M4, P7, P8. | The single search changes a bot best. | The saved bests file is unchanged; `GoldenShotsTest` passes. The user screenshots the new overlay page on Palm Grove, Grand Carousel and a Skyreach hole, as the baseline. |
 | 1 | **Stalls and slow paths** | P1-P4, P6. | Water appearing a frame late. | `DrawBudgetTest`; a new test that a practice jump never builds water on the main thread; a performance lap on the phone, before and after. |
 | 2 | **Second rounds: the groundwork and one course** | L1-L6, `Mood.ramps`, G1-G8, the tolerance number, and **Mirage Oasis II** only. | Too few usable holes at the hard setting; "harder" feeling unfair. | `HoleCompletableTest`, `PaletteMoodTest`, `HolePreviewTest`, `ProgressTest` for the new unlock, and a UI playthrough of the I / II chip. The user plays Oasis II and says whether it's hard in the right way. |
 | 3 | **The other nine generated second rounds** | Generate, prove, pick and emit them, with the V1 shapes. | CI time; names and moods for nine courses. | As pass 2, plus PNGs of all 81 holes. |

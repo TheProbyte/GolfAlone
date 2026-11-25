@@ -298,11 +298,14 @@ object Holes {
     val COURSES: List<Course> by lazy { listOf(COVE, Saltmarsh.COURSE, Lighthouse.COURSE, Lagoon.COURSE, Wreck.COURSE, Ember.COURSE, Frost.COURSE, Temple.COURSE, Bluff.COURSE,
         Oasis.COURSE, Mushroom.COURSE, Carnival.COURSE, Skyreach.COURSE, Clockwork.COURSE, Mangrove.COURSE, Crystal.COURSE, Autumn.COURSE, Zen.COURSE, Starfall.COURSE) }
 
-    fun course(id: String): Course? = COURSES.firstOrNull { it.id == id }
+    /** Every course there is, in the unlock chain or not (second rounds sit outside it). */
+    val allCourses: List<Course> get() = COURSES
+
+    fun course(id: String): Course? = allCourses.firstOrNull { it.id == id }
 
     /** Driftwood Cove's holes (the golden shots are pinned to these). */
     val all: List<Hole> get() = COVE.holes
 
     /** Every hole of every course. */
-    val everyHole: List<Hole> get() = COURSES.flatMap { it.holes }
+    val everyHole: List<Hole> get() = allCourses.flatMap { it.holes }
 }
